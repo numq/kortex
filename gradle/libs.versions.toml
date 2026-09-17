@@ -27,7 +27,6 @@ kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotl
 krope-core = { module = "io.github.numq.krope:core", version.ref = "krope" }
 krope-text = { module = "io.github.numq.krope:text", version.ref = "krope" }
 skiko = { module = "org.jetbrains.skiko:skiko", version.ref = "skiko" }
-skiko-android = { module = "org.jetbrains.skiko:skiko-android", version.ref = "skiko" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
