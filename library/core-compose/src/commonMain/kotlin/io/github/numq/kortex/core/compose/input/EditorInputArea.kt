@@ -16,6 +16,7 @@ import androidx.compose.ui.input.pointer.*
 import io.github.numq.kortex.core.EditorEngine
 import io.github.numq.kortex.core.caret.CaretAction
 import io.github.numq.kortex.core.compose.dimensions.EditorDimensions
+import io.github.numq.kortex.core.compose.font.EditorFont
 import io.github.numq.kortex.core.compose.key.EditorKeyContext
 import io.github.numq.kortex.core.compose.keymap.DefaultEditorKeymap
 import io.github.numq.kortex.core.compose.keymap.EditorKeymap
@@ -28,10 +29,10 @@ import kotlin.math.floor
 
 @Composable
 fun EditorInputArea(
+    modifier: Modifier = Modifier,
     engine: EditorEngine,
+    font: EditorFont,
     scrollController: EditorScrollController,
-    fontCharWidth: Float,
-    fontLineHeight: Float,
     gutterWidth: Float,
     dimensions: EditorDimensions,
     readOnly: Boolean,
@@ -43,14 +44,11 @@ fun EditorInputArea(
     handlePaste: () -> Unit,
     keymap: EditorKeymap = remember { DefaultEditorKeymap.create() },
     onGutterClick: ((line: Int, offset: Offset) -> Boolean)? = null,
-    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val currentGutterWidth by rememberUpdatedState(gutterWidth)
 
-    val currentCharWidth by rememberUpdatedState(fontCharWidth)
-
-    val currentLineHeight by rememberUpdatedState(fontLineHeight)
+    val currentFont by rememberUpdatedState(font)
 
     val currentDimensions by rememberUpdatedState(dimensions)
 
@@ -81,7 +79,7 @@ fun EditorInputArea(
 
         val effectiveScrollY = maxOf(0f, scrollController.verticalOffset)
 
-        val snappedLineHeight = currentLineHeight
+        val snappedLineHeight = currentFont.lineHeight
 
         val visualLineIndex = floor((offset.y + effectiveScrollY) / snappedLineHeight).toInt()
 
@@ -91,18 +89,17 @@ fun EditorInputArea(
 
         val documentLine = foldMap.visualToDocumentLine(safeVisualLine)
 
-        val localX =
-            offset.x - currentGutterWidth + scrollController.horizontalOffset - currentDimensions.editorPaddingStart
+        val localX = maxOf(
+            0f, offset.x - currentGutterWidth + scrollController.horizontalOffset - currentDimensions.editorPaddingStart
+        )
+
+        val lineText = snapshot.getLineText(documentLine)
+
+        val column = currentFont.getOffsetAtCoordinate(lineText, localX)
 
         val lineLength = snapshot.getLineLength(documentLine)
 
-        val column = when {
-            currentCharWidth > 0f -> (localX / currentCharWidth).toInt().coerceIn(0, lineLength)
-
-            else -> 0
-        }
-
-        return TextPosition(line = documentLine, column = column)
+        return TextPosition(line = documentLine, column = column.coerceIn(0, lineLength))
     }
 
     val pointerInputModifier = Modifier.pointerInput(engine) {
@@ -123,7 +120,7 @@ fun EditorInputArea(
                         totalDeltaY += c.scrollDelta.y
                     }
 
-                    val scrollMultiplier = currentLineHeight * 2.5f
+                    val scrollMultiplier = currentFont.lineHeight * 2.5f
 
                     val isShiftPressed = event.keyboardModifiers.isShiftPressed
 
@@ -202,6 +199,28 @@ fun EditorInputArea(
                         }
 
                         if (dragEvent.type == PointerEventType.Move) {
+                            val currentY = dragChange.position.y
+
+                            val viewportHeight = scrollController.viewportHeight
+
+                            val scrollZone = currentFont.lineHeight * 1.5f
+
+                            val autoScrollDeltaY = when {
+                                currentY < scrollZone -> -currentFont.lineHeight * ((scrollZone - currentY) / scrollZone).coerceIn(
+                                    .5f, 3f
+                                )
+
+                                viewportHeight > 0f && currentY > viewportHeight - scrollZone -> currentFont.lineHeight * ((currentY - (viewportHeight - scrollZone)) / scrollZone).coerceIn(
+                                    .5f, 3f
+                                )
+
+                                else -> 0f
+                            }
+
+                            if (autoScrollDeltaY != 0f) {
+                                scrollController.scrollBy(deltaY = autoScrollDeltaY)
+                            }
+
                             val dragPos = calculatePositionAtOffset(dragChange.position)
 
                             when {

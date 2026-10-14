@@ -1,4 +1,3 @@
-// file: library/code-compose/src/commonMain/kotlin/io/github/numq/kortex/code/compose/KortexCodeEditor.kt
 package io.github.numq.kortex.code.compose
 
 import androidx.compose.foundation.layout.fillMaxSize
@@ -74,10 +73,10 @@ fun KortexCodeEditor(
         canvas = { _, viewport, isFocused, gutterWidth ->
             CodeEditorCanvas(
                 codeState = codeState,
-                viewport = viewport,
-                scrollController = scrollController,
                 font = font,
                 theme = theme,
+                scrollController = scrollController,
+                viewport = viewport,
                 layerFactory = layerFactory,
                 gutterWidth = gutterWidth,
                 columnRuler = columnRuler,

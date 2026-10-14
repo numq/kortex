@@ -29,6 +29,9 @@ import io.github.numq.kortex.core.history.HistoryAction
 import io.github.numq.kortex.core.selection.Selection
 import io.github.numq.kortex.core.selection.SelectionAction
 import io.github.numq.kortex.core.viewport.Viewport
+import io.github.numq.krope.text.TextOperation
+import io.github.numq.krope.text.TextPosition
+import io.github.numq.krope.text.TextRange
 
 @Composable
 fun KortexEditor(
@@ -46,10 +49,10 @@ fun KortexEditor(
     canvas: @Composable (state: EditorState, viewport: Viewport, isFocused: Boolean, gutterWidth: Float) -> Unit = { state, viewport, isFocused, gutterWidth ->
         EditorCanvas(
             state = state,
-            viewport = viewport,
-            scrollController = scrollController,
             font = font,
             theme = theme,
+            scrollController = scrollController,
+            viewport = viewport,
             layerFactory = layerFactory,
             gutterWidth = gutterWidth,
             isFocused = isFocused,
@@ -81,9 +84,25 @@ fun KortexEditor(
         }
     }
 
-    val textContentWidth by remember(state.snapshot.maxLineLength, font.charWidth, dimensions) {
+    val textContentWidth by remember(state.snapshot, font.charWidth, state.config.tabSize, dimensions) {
         derivedStateOf {
-            dimensions.editorPaddingStart + (state.snapshot.maxLineLength * font.charWidth) + dimensions.editorPaddingEnd
+            val maxVisualCols = (0 until state.snapshot.lines).maxOfOrNull { lineIdx ->
+                val text = state.snapshot.getLineText(lineIdx)
+
+                var cols = 0
+
+                for (char in text) {
+                    cols += when (char) {
+                        '\t' -> state.config.tabSize - (cols % state.config.tabSize)
+
+                        else -> 1
+                    }
+                }
+
+                cols
+            } ?: state.snapshot.maxLineLength
+
+            dimensions.editorPaddingStart + (maxVisualCols * font.charWidth) + dimensions.editorPaddingEnd
         }
     }
 
@@ -112,21 +131,93 @@ fun KortexEditor(
     fun handleCopy() {
         val activeSelections = state.selections.filter(Selection::isNotEmpty)
 
-        if (activeSelections.isNotEmpty()) {
-            val text = activeSelections.joinToString("\n") { selection ->
-                state.snapshot.getTextInRange(selection.range)
+        when {
+            activeSelections.isNotEmpty() -> {
+                val text = activeSelections.joinToString("\n") { selection ->
+                    state.snapshot.getTextInRange(selection.range)
+                }
+
+                clipboardManager.setText(AnnotatedString(text))
             }
 
-            clipboardManager.setText(AnnotatedString(text))
+            else -> {
+                val linesToCopy = state.selections.map { selection ->
+                    selection.caret.line
+                }.distinct().sorted()
+
+                if (linesToCopy.isNotEmpty()) {
+                    val delimiter = state.config.lineSeparator
+
+                    val text = linesToCopy.joinToString(delimiter) { line ->
+                        state.snapshot.getLineText(line)
+                    } + delimiter
+
+                    clipboardManager.setText(AnnotatedString(text))
+                }
+            }
         }
     }
 
     fun handleCut() {
         if (readOnly) return
 
-        handleCopy()
+        val activeSelections = state.selections.filter(Selection::isNotEmpty)
 
-        engine.dispatch(EditAction.Backspace)
+        when {
+            activeSelections.isNotEmpty() -> {
+                handleCopy()
+
+                engine.dispatch(EditAction.Backspace)
+            }
+
+            else -> {
+                handleCopy()
+
+                val linesToCut = state.selections.map { selection ->
+                    selection.caret.line
+                }.distinct().sortedDescending()
+
+                val operations = linesToCut.map { line ->
+                    val lineLength = state.snapshot.getLineLength(line)
+
+                    val isLastLine = line == state.snapshot.lines - 1
+
+                    when {
+                        isLastLine && line > 0 -> {
+                            val prevLineLen = state.snapshot.getLineLength(line - 1)
+
+                            TextOperation.Data.Single.Delete(
+                                range = TextRange(
+                                    start = TextPosition(line - 1, prevLineLen), end = TextPosition(line, lineLength)
+                                )
+                            )
+                        }
+
+                        state.snapshot.lines > 1 -> TextOperation.Data.Single.Delete(
+                            range = TextRange(
+                                start = TextPosition(line, 0), end = TextPosition(line + 1, 0)
+                            )
+                        )
+
+                        else -> TextOperation.Data.Single.Delete(
+                            range = TextRange(
+                                start = TextPosition(0, 0), end = TextPosition(0, lineLength)
+                            )
+                        )
+                    }
+                }
+
+                if (operations.isNotEmpty()) {
+                    val batch = when (operations.size) {
+                        1 -> operations[0]
+
+                        else -> TextOperation.Data.Batch(operations)
+                    }
+
+                    engine.applyOperation(batch, canMerge = false)
+                }
+            }
+        }
     }
 
     fun handlePaste() {
@@ -184,10 +275,10 @@ fun KortexEditor(
         }
 
         EditorInputArea(
+            modifier = Modifier.fillMaxSize(),
             engine = engine,
+            font = font,
             scrollController = scrollController,
-            fontCharWidth = font.charWidth,
-            fontLineHeight = font.lineHeight,
             gutterWidth = gutterWidth,
             dimensions = dimensions,
             readOnly = readOnly,
@@ -217,7 +308,6 @@ fun KortexEditor(
             handlePaste = ::handlePaste,
             keymap = keymap,
             onGutterClick = onGutterClick,
-            modifier = Modifier.fillMaxSize(),
         ) {
             canvas(state, viewport, isFocused, gutterWidth)
 

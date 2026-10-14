@@ -85,7 +85,7 @@ internal fun CompletionOverlay(
                             Text(
                                 text = detail,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = itemForeground.copy(alpha = 0.7f),
+                                color = itemForeground.copy(alpha = .7f),
                             )
                         }
                     }

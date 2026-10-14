@@ -19,10 +19,10 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 fun EditorCanvas(
     state: EditorState,
-    viewport: Viewport,
-    scrollController: EditorScrollController,
     font: EditorFont,
     theme: EditorTheme,
+    scrollController: EditorScrollController,
+    viewport: Viewport,
     layerFactory: LayerFactory,
     gutterWidth: Float,
     isFocused: Boolean,
@@ -112,7 +112,9 @@ fun EditorCanvas(
             gutterSeparatorLayer.render(nativeCanvas)
 
             nativeCanvas.save()
+
             nativeCanvas.translate(gutterWidth, 0f)
+
             nativeCanvas.clipRect(Rect.makeWH(width.toFloat() - gutterWidth, height.toFloat()))
 
             selectionLayers.forEach { layer ->

@@ -381,13 +381,13 @@ val customEditorTheme = CodeEditorTheme(
         hint = Color(0xFF5C6370)
     ),
     occurrences = OccurrencesTheme(
-        matchBackground = Color(0xFF3E4451).copy(alpha = 0.5f),
-        currentMatchBackground = Color(0xFF528BFF).copy(alpha = 0.4f)
+        matchBackground = Color(0xFF3E4451).copy(alpha = .5f),
+        currentMatchBackground = Color(0xFF528BFF).copy(alpha = .4f)
     ),
     folding = FoldingTheme(
         iconColor = Color(0xFF61AFEF)
     ),
-    ruler = Color(0xFF3E4451).copy(alpha = 0.3f)
+    ruler = Color(0xFF3E4451).copy(alpha = .3f)
 )
 ```
 

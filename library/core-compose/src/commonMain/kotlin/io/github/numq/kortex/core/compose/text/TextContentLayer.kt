@@ -27,14 +27,6 @@ data class TextContentLayer(
         return rects.firstOrNull()?.rect?.right ?: 0f
     }
 
-    fun getOffsetAtCoordinate(targetX: Float): Int {
-        if (paragraph.isClosed || targetX <= 0) return 0
-
-        val localX = targetX - x
-
-        return paragraph.getGlyphPositionAtCoordinate(localX, 0f).position
-    }
-
     override fun render(canvas: Canvas) {
         if (!paragraph.isClosed) {
             paragraph.paint(canvas, x, y)

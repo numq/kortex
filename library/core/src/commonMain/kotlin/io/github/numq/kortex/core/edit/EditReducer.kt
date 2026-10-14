@@ -177,14 +177,38 @@ internal object EditReducer {
             }
         }
 
-        return wrapOperations(operations) ?: TextOperation.Data.Single.Insert(state.primarySelection.caret, "\n")
+        return wrapOperations(operations) ?: TextOperation.Data.Single.Insert(
+            position = state.primarySelection.caret, text = "\n"
+        )
     }
 
-    private fun calculateTab(state: EditorState, tabSpaces: String): TextOperation.Data {
+    private fun calculateTab(
+        state: EditorState, tabSpaces: String, tabSize: Int, useSoftTabs: Boolean
+    ): TextOperation.Data {
         val hasRange = state.selections.any(Selection::isNotEmpty)
 
         if (!hasRange) {
-            return calculateInsert(state, tabSpaces)
+            val sortedSelections = state.selections.sortedDescending()
+
+            val operations = sortedSelections.map { selection ->
+                val textToInsert = when {
+                    useSoftTabs -> {
+                        val remainder = selection.caret.column % tabSize
+
+                        val spacesNeeded = if (remainder == 0) tabSize else tabSize - remainder
+
+                        " ".repeat(spacesNeeded)
+                    }
+
+                    else -> "\t"
+                }
+
+                TextOperation.Data.Single.Insert(position = selection.caret, text = textToInsert)
+            }
+
+            return wrapOperations(operations) ?: TextOperation.Data.Single.Insert(
+                position = state.primarySelection.caret, text = tabSpaces
+            )
         }
 
         val uniqueLines = state.selections.flatMap { selection ->
@@ -197,13 +221,16 @@ internal object EditReducer {
             }
 
             start..end
+
         }.distinct().sortedDescending()
 
         val operations = uniqueLines.map { line ->
             TextOperation.Data.Single.Insert(position = TextPosition(line, 0), text = tabSpaces)
         }
 
-        return wrapOperations(operations) ?: TextOperation.Data.Single.Insert(state.primarySelection.caret, tabSpaces)
+        return wrapOperations(operations) ?: TextOperation.Data.Single.Insert(
+            position = state.primarySelection.caret, text = tabSpaces
+        )
     }
 
     private fun calculateUntab(state: EditorState, tabSpaces: String, tabSize: Int): TextOperation.Data? {
@@ -673,7 +700,12 @@ internal object EditReducer {
         }
 
         is EditAction.Tab -> {
-            val operation = calculateTab(state, state.config.tabString)
+            val operation = calculateTab(
+                state = state,
+                tabSpaces = state.config.tabString,
+                tabSize = state.config.tabSize,
+                useSoftTabs = state.config.useSoftTabs
+            )
 
             EditorResult(state, EditorCommand.ApplyText(operation, canMerge = false))
         }

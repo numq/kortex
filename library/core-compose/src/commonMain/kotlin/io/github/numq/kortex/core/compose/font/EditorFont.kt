@@ -2,10 +2,8 @@ package io.github.numq.kortex.core.compose.font
 
 import io.github.numq.kortex.core.lifecycle.CloseableResource
 import org.jetbrains.skia.*
-import org.jetbrains.skia.paragraph.FontCollection
-import org.jetbrains.skia.paragraph.ParagraphBuilder
-import org.jetbrains.skia.paragraph.ParagraphStyle
-import org.jetbrains.skia.paragraph.TypefaceFontProvider
+import org.jetbrains.skia.impl.use
+import org.jetbrains.skia.paragraph.*
 
 class EditorFont(val typeface: Typeface, val size: Float, val lineSpacing: Float) : CloseableResource() {
     private val fontProvider = TypefaceFontProvider().apply {
@@ -43,6 +41,33 @@ class EditorFont(val typeface: Typeface, val size: Float, val lineSpacing: Float
     val lineHeight = textHeight * lineSpacing
 
     val familyName = typeface.familyName
+
+    fun getOffsetAtCoordinate(text: String, x: Float): Int {
+        if (x <= 0f || text.isEmpty()) return 0
+
+        checkOpen()
+
+        val offset = TextStyle().apply {
+            this.fontFamilies = arrayOf(this@EditorFont.familyName)
+            this.fontSize = this@EditorFont.size
+        }.use { baseTextStyle ->
+            ParagraphStyle().apply {
+                this.maxLinesCount = 1
+                this.textStyle = baseTextStyle
+            }.use { style ->
+                buildParagraph(style) {
+                    addText(text)
+                }.use { builder ->
+                    builder.build().use { paragraph ->
+                        paragraph.layout(Float.MAX_VALUE)
+                        paragraph.getGlyphPositionAtCoordinate(x, 0f).position
+                    }
+                }
+            }
+        }
+
+        return offset.coerceIn(0, text.length)
+    }
 
     fun createTextLine(text: String): TextLine {
         checkOpen()
