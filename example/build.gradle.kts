@@ -15,17 +15,11 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(projects.library.codeCompose)
-                implementation(libs.kotlinx.coroutines.core)
             }
         }
         val jvmMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
-                implementation(libs.compose.runtime)
-                implementation(libs.compose.foundation)
-                implementation(libs.compose.material3)
-                implementation(libs.compose.material.icons.extended)
-                implementation(libs.compose.ui)
             }
         }
     }

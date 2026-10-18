@@ -31,10 +31,10 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            api(libs.kotlinx.atomicfu)
             api(libs.kotlinx.coroutines.core)
             api(libs.krope.core)
             api(libs.krope.text)
+            implementation(libs.kotlinx.atomicfu)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

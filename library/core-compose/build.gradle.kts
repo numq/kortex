@@ -35,11 +35,12 @@ kotlin {
         commonMain.dependencies {
             api(projects.library.core)
             api(libs.skiko)
-            implementation(libs.compose.foundation)
-            implementation(libs.compose.material3)
-            implementation(libs.compose.material.icons.extended)
-            implementation(libs.compose.runtime)
-            implementation(libs.compose.ui)
+            api(libs.compose.foundation)
+            api(libs.compose.material3)
+            api(libs.compose.material.icons.extended)
+            api(libs.compose.runtime)
+            api(libs.compose.ui)
+            implementation(libs.kotlinx.atomicfu)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

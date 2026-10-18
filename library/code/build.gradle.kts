@@ -31,7 +31,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(projects.library.core)
+            api(projects.library.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
