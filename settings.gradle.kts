@@ -35,5 +35,11 @@ project(":library:core").projectDir = file("library/core")
 include(":library:core-compose")
 project(":library:core-compose").projectDir = file("library/core-compose")
 
-include(":example")
-project(":example").projectDir = file("example")
+include(":example:android")
+project(":example:android").projectDir = file("example/android")
+
+include(":example:desktop")
+project(":example:desktop").projectDir = file("example/desktop")
+
+include(":example:shared")
+project(":example:shared").projectDir = file("example/shared")
