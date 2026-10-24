@@ -65,26 +65,25 @@ class CodeEditorEngine(
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     private fun bindAnalysisPipeline() {
         analysisService.tokenProvider?.let { provider ->
-            engine.buffer.snapshot.debounce(50L.milliseconds).distinctUntilChangedBy(TextSnapshot::revision)
-                .mapLatest { snapshot: TextSnapshot ->
-                    val tokens = provider.provideTokens(snapshot, null)
+            engine.buffer.snapshot.distinctUntilChangedBy(TextSnapshot::revision).mapLatest { snapshot: TextSnapshot ->
+                val tokens = provider.provideTokens(snapshot, null)
 
-                    snapshot.revision to tokens
-                }.flowOn(Dispatchers.Default).onEach { (revision, tokens) ->
-                    if (engine.buffer.snapshot.value.revision == revision) {
-                        val existingSyntax = _codeState.value.syntax
-                        dispatch(
-                            CodeEditorAction.External.UpdateSyntax(
-                                Syntax(
-                                    revision = revision,
-                                    foldingRegions = existingSyntax?.foldingRegions.orEmpty(),
-                                    occurrences = existingSyntax?.occurrences.orEmpty(),
-                                    tokensPerLine = tokens,
-                                )
+                snapshot.revision to tokens
+            }.flowOn(Dispatchers.Default).onEach { (revision, tokens) ->
+                if (engine.buffer.snapshot.value.revision == revision) {
+                    val existingSyntax = _codeState.value.syntax
+                    dispatch(
+                        CodeEditorAction.External.UpdateSyntax(
+                            Syntax(
+                                revision = revision,
+                                foldingRegions = existingSyntax?.foldingRegions.orEmpty(),
+                                occurrences = existingSyntax?.occurrences.orEmpty(),
+                                tokensPerLine = tokens,
                             )
                         )
-                    }
-                }.launchIn(scope)
+                    )
+                }
+            }.launchIn(scope)
         }
 
         analysisService.diagnosticsProvider?.let { provider ->

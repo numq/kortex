@@ -29,12 +29,16 @@ internal fun CodeEditorCanvas(
 
     val scrollX = scrollController.horizontalOffset
 
+    val tokensPerLine = codeState.syntax?.tokensPerLine
+    val foldingRegions = codeState.syntax?.foldingRegions
+    val occurrences = codeState.syntax?.occurrences
+
     val contentLayers = remember(
-        viewport.viewportLines, codeState.syntax?.tokensPerLine, scrollX, font, theme
+        viewport.viewportLines, tokensPerLine, scrollX, font, theme
     ) {
         layerFactory.createSyntaxContentLayers(
             viewportLines = viewport.viewportLines,
-            tokensPerLine = codeState.syntax?.tokensPerLine,
+            tokensPerLine = tokensPerLine,
             scrollX = scrollX,
             font = font,
             theme = theme,
@@ -42,7 +46,7 @@ internal fun CodeEditorCanvas(
     }
 
     val foldingMarkersLayers = remember(
-        viewport.viewportLines, gutterWidth, codeState.syntax?.foldingRegions, state.collapsedLines, theme
+        viewport.viewportLines, gutterWidth, foldingRegions, state.collapsedLines, theme
     ) {
         when {
             gutterWidth <= 0f -> emptyList()
@@ -50,9 +54,9 @@ internal fun CodeEditorCanvas(
             else -> layerFactory.createFoldingMarkersLayers(
                 viewportLines = viewport.viewportLines,
                 gutterWidth = gutterWidth,
-                foldingRegions = codeState.syntax?.foldingRegions,
+                foldingRegions = foldingRegions,
                 collapsedLines = state.collapsedLines,
-                theme = theme
+                theme = theme,
             )
         }
     }
@@ -64,18 +68,21 @@ internal fun CodeEditorCanvas(
     }
 
     val occurrenceLayers = remember(
-        state.caret, codeState.syntax?.occurrences, scrollX, contentLayers, theme
+        state.caret, occurrences, scrollX, contentLayers, theme
     ) {
-        codeState.syntax?.occurrences?.let { occurrences ->
-            layerFactory.createOccurrencesLayers(contentLayers, occurrences, state.caret, scrollX, theme)
+        occurrences?.let { list ->
+            layerFactory.createOccurrencesLayers(contentLayers, list, state.caret, scrollX, theme)
         } ?: emptyList()
     }
 
+    val isAnalysisUpToDate = codeState.analysis?.revision == state.snapshot.revision
+    val issues = if (isAnalysisUpToDate) codeState.analysis?.issues else null
+
     val diagnosticsLayers = remember(
-        codeState.analysis?.issues, scrollX, contentLayers, theme
+        issues, scrollX, contentLayers, theme
     ) {
-        codeState.analysis?.issues?.let { issues ->
-            layerFactory.createDiagnosticsLayers(contentLayers, issues, scrollX, theme)
+        issues?.let { list ->
+            layerFactory.createDiagnosticsLayers(contentLayers, list, scrollX, theme)
         } ?: emptyList()
     }
 

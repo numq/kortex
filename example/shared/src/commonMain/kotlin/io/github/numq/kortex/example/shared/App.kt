@@ -62,7 +62,9 @@ fun App(fontBytes: ByteArray) {
         CodeEditorEngine(
             scope = scope,
             engine = editorEngine,
-            analysisService = object : LanguageAnalysisService {},
+            analysisService = object : LanguageAnalysisService {
+                override val tokenProvider = KotlinTokenProvider()
+            },
         )
     }
 

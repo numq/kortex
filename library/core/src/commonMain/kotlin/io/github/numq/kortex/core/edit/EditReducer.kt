@@ -135,25 +135,62 @@ internal object EditReducer {
         return wrapOperations(operations)
     }
 
-    private fun calculateEnter(state: EditorState): TextOperation.Data {
-        val sortedSelections = state.selections.sortedDescending()
+    private fun calculateEnter(state: EditorState): EditorCommand.ApplyText {
+        val tabSize = state.config.tabSize.coerceAtLeast(1)
+        val tabUnit = if (state.config.useSoftTabs) " ".repeat(tabSize) else "\t"
 
-        val operations = sortedSelections.map { selection ->
-            val currentLineText = state.snapshot.getLineText(selection.caret.line)
-            val currentIndent = currentLineText.takeWhile { char ->
-                char == ' ' || char == '\t'
-            }
-            val insertText = "\n$currentIndent"
+        val sortedSelections = state.selections.sortedDescending()
+        val operations = ArrayList<TextOperation.Data.Single>()
+        val targetSelections = ArrayList<Selection>()
+
+        for (selection in sortedSelections) {
+            val caret = selection.caret
+            val lineText = state.snapshot.getLineText(caret.line)
+
+            val currentIndent = lineText.takeWhile { it == ' ' || it == '\t' }
+
+            val beforeCaret = lineText.take(caret.column.coerceIn(0, lineText.length)).trimEnd()
+            val afterCaret = lineText.drop(caret.column.coerceIn(0, lineText.length)).trimStart()
+
+            val isBetweenBraces = beforeCaret.endsWith('{') && afterCaret.startsWith('}')
+
+            val insertText: String
+            val targetPos: TextPosition
 
             when {
-                selection.isNotEmpty -> TextOperation.Data.Single.Replace(range = selection.range, text = insertText)
-                else -> TextOperation.Data.Single.Insert(position = selection.caret, text = insertText)
+                isBetweenBraces -> {
+                    insertText = "\n$currentIndent$tabUnit\n$currentIndent"
+                    targetPos = TextPosition(line = caret.line + 1, column = currentIndent.length + tabUnit.length)
+                }
+
+                beforeCaret.endsWith('{') || beforeCaret.endsWith(':') || beforeCaret.endsWith('(') -> {
+                    val newIndent = currentIndent + tabUnit
+                    insertText = "\n$newIndent"
+                    targetPos = TextPosition(line = caret.line + 1, column = newIndent.length)
+                }
+
+                else -> {
+                    insertText = "\n$currentIndent"
+                    targetPos = TextPosition(line = caret.line + 1, column = currentIndent.length)
+                }
             }
+
+            val op = when {
+                selection.isNotEmpty -> TextOperation.Data.Single.Replace(range = selection.range, text = insertText)
+                else -> TextOperation.Data.Single.Insert(position = caret, text = insertText)
+            }
+
+            operations.add(op)
+            targetSelections.add(Selection.cursor(targetPos))
         }
 
-        return wrapOperations(operations) ?: TextOperation.Data.Single.Insert(
-            position = state.primarySelection.caret,
-            text = "\n",
+        val finalOperation = when (operations.size) {
+            1 -> operations[0]
+            else -> TextOperation.Data.Batch(operations)
+        }
+
+        return EditorCommand.ApplyText(
+            operation = finalOperation, canMerge = false, targetSelections = targetSelections.reversed()
         )
     }
 
@@ -560,8 +597,8 @@ internal object EditReducer {
         }
 
         is EditAction.Enter -> {
-            val operation = calculateEnter(state)
-            EditorResult(state, EditorCommand.ApplyText(operation, canMerge = false))
+            val cmd = calculateEnter(state)
+            EditorResult(state, cmd)
         }
 
         is EditAction.Tab -> {

@@ -46,49 +46,53 @@ internal class CodeParagraphCache(capacity: Int = 1000) : LruCache<CodeParagraph
                 }
 
                 font.buildParagraph(style) {
-                    when {
-                        tokens.isEmpty() -> addStyledSegment(text, defaultColor)
+                    if (tokens.isEmpty() || text.isEmpty()) {
+                        addStyledSegment(text, defaultColor)
+                    } else {
+                        val textLength = text.length
 
-                        else -> {
-                            var currentIndex = 0
+                        val lineTokens = tokens.filter { token ->
+                            token.range.start.line <= line && token.range.end.line >= line
+                        }.mapNotNull { token ->
+                            val startCol = if (token.range.start.line < line) 0 else token.range.start.column
+                            val endCol = if (token.range.end.line > line) textLength else token.range.end.column
 
-                            val sortedTokens = tokens.filter { token ->
-                                token.range.start.line <= line && token.range.end.line >= line
-                            }.sortedWith(compareBy<Token> { token ->
-                                if (token.range.start.line < line) 0 else token.range.start.column
-                            }.thenBy { token ->
-                                if (token.range.end.line > line) text.length else token.range.end.column
-                            })
+                            val clampedStart = startCol.coerceIn(0, textLength)
+                            val clampedEnd = endCol.coerceIn(clampedStart, textLength)
 
-                            for ((range, type) in sortedTokens) {
-                                val rawStart = when {
-                                    range.start.line < line -> 0
-                                    else -> range.start.column.coerceIn(0, text.length)
-                                }
+                            if (clampedStart < clampedEnd) {
+                                Triple(clampedStart, clampedEnd, token.type)
+                            } else null
+                        }.sortedBy { it.first }
 
-                                val start = rawStart.coerceAtLeast(currentIndex)
+                        var currentIndex = 0
 
-                                val end = when {
-                                    range.end.line > line -> text.length
-                                    else -> range.end.column.coerceIn(start, text.length)
-                                }
-
-                                if (start > currentIndex) {
-                                    addStyledSegment(text.substring(currentIndex, start), defaultColor)
-                                }
-
-                                if (end > start) {
-                                    val tokenColor =
-                                        syntaxTheme.resolver.resolveColor(type, syntaxTheme.defaultText).toArgb()
-
-                                    addStyledSegment(text.substring(start, end), tokenColor)
-                                    currentIndex = end
-                                }
+                        for ((start, end, type) in lineTokens) {
+                            if (start < currentIndex) {
+                                if (end <= currentIndex) continue
+                                val adjustedStart = currentIndex
+                                val tokenColor =
+                                    syntaxTheme.resolver.resolveColor(type, syntaxTheme.defaultText).toArgb()
+                                addStyledSegment(text.substring(adjustedStart, end), tokenColor)
+                                currentIndex = end
+                                continue
                             }
 
-                            if (currentIndex < text.length) {
-                                addStyledSegment(text.substring(currentIndex), defaultColor)
+                            if (start > currentIndex) {
+                                addStyledSegment(text.substring(currentIndex, start), defaultColor)
+                                currentIndex = start
                             }
+
+                            if (end > currentIndex) {
+                                val tokenColor =
+                                    syntaxTheme.resolver.resolveColor(type, syntaxTheme.defaultText).toArgb()
+                                addStyledSegment(text.substring(currentIndex, end), tokenColor)
+                                currentIndex = end
+                            }
+                        }
+
+                        if (currentIndex < textLength) {
+                            addStyledSegment(text.substring(currentIndex, textLength), defaultColor)
                         }
                     }
                 }.use { builder ->
