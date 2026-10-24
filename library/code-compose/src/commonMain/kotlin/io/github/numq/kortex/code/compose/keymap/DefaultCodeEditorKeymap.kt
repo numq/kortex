@@ -9,7 +9,18 @@ import io.github.numq.kortex.core.compose.keymap.DefaultEditorKeymap
 import io.github.numq.kortex.core.compose.keymap.EditorKeymap
 import io.github.numq.kortex.core.compose.keymap.buildEditorKeymap
 
+/**
+ * Factory for default keybindings in the code editor, extending [DefaultEditorKeymap]
+ * with code completion navigation, completion confirmation/dismissal, and comment toggling.
+ */
 object DefaultCodeEditorKeymap {
+    /**
+     * Builds an [EditorKeymap] bound to [codeEngine].
+     *
+     * @param codeEngine The target code engine.
+     * @param commentPrefix Line comment prefix inserted by Ctrl+/ (Cmd+/).
+     * @param baseKeymap Base navigation and editing keymap to include.
+     */
     fun create(
         codeEngine: CodeEditorEngine,
         commentPrefix: String = "// ",

@@ -8,20 +8,29 @@ import org.jetbrains.skia.paragraph.RectHeightMode
 import org.jetbrains.skia.paragraph.RectWidthMode
 
 data class TextContentLayer(
-    val viewportLine: ViewportLine, val paragraph: Paragraph, val x: Float, val y: Float
+    val viewportLine: ViewportLine,
+    val paragraph: Paragraph,
+    val x: Float,
+    val y: Float,
 ) : Layer {
     fun getCoordinateAtOffset(offset: Int): Float {
         if (paragraph.isClosed || offset <= 0) return 0f
 
-        val safeOffset = offset.coerceAtMost(viewportLine.text.length)
+        val text = viewportLine.text
+        val safeOffset = offset.coerceAtMost(text.length)
 
         if (safeOffset <= 0) return 0f
 
+        val startOffset = when {
+            safeOffset >= 2 && text[safeOffset - 1].isLowSurrogate() && text[safeOffset - 2].isHighSurrogate() -> safeOffset - 2
+            else -> safeOffset - 1
+        }
+
         val rects = paragraph.getRectsForRange(
-            start = safeOffset - 1,
+            start = startOffset,
             end = safeOffset,
             rectHeightMode = RectHeightMode.TIGHT,
-            rectWidthMode = RectWidthMode.TIGHT
+            rectWidthMode = RectWidthMode.TIGHT,
         )
 
         return rects.firstOrNull()?.rect?.right ?: 0f

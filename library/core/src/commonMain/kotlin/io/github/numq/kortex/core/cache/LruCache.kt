@@ -4,6 +4,13 @@ import io.github.numq.kortex.core.lifecycle.CloseableResource
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 
+/**
+ * Thread-safe Least-Recently-Used (LRU) cache.
+ *
+ * Automatically closes any evicted [AutoCloseable] values.
+ *
+ * @param capacity Maximum number of items retained in memory.
+ */
 abstract class LruCache<Key, Value>(val capacity: Int) : CloseableResource(), Cache<Key, Value> {
     init {
         require(capacity > 0) { "Capacity must be greater than 0" }

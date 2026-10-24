@@ -1,13 +1,15 @@
 package io.github.numq.kortex.example.shared
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -25,10 +27,11 @@ import io.github.numq.krope.text.RopeTextBuffer
 import io.github.numq.krope.text.TextLineEnding
 import org.jetbrains.skia.Data
 import org.jetbrains.skia.FontMgr
+import org.jetbrains.skia.impl.use
 
 private const val SAMPLE_CODE = """package io.github.numq.kortex.example
 
-import io.github.numq.kortex.core.KortexEngine
+import io.github.numq.kortex.core.EditorEngine
 
 fun main() {
     val message = "Hello, Kortex High-Performance Skia Editor! Hello, Kortex High-Performance Skia Editor! Hello, Kortex High-Performance Skia Editor!"
@@ -47,7 +50,7 @@ fun App(fontBytes: ByteArray) {
             initialText = SAMPLE_CODE,
             initialLineEnding = TextLineEnding.CRLF,
             initialEncoding = Encoding.UTF8,
-            enablePooling = true
+            enablePooling = true,
         )
     }
 
@@ -55,26 +58,33 @@ fun App(fontBytes: ByteArray) {
         EditorEngine(scope = scope, buffer = buffer)
     }
 
-    val codeEditorEngine = remember(buffer) {
+    val codeEditorEngine = remember(editorEngine) {
         CodeEditorEngine(
-            scope = scope, engine = editorEngine, analysisService = object : LanguageAnalysisService {})
+            scope = scope,
+            engine = editorEngine,
+            analysisService = object : LanguageAnalysisService {},
+        )
     }
 
     val density = LocalDensity.current
-
     val fontSize = with(density) { 14.dp.toPx() }
 
     val font = remember(fontBytes, fontSize) {
-        val data = Data.makeFromBytes(fontBytes)
-
-        val typeface = FontMgr.default.makeFromData(data) ?: error("Skia failed to parse TTF bytes")
+        val typeface = Data.makeFromBytes(fontBytes).use { data ->
+            FontMgr.default.makeFromData(data) ?: error("Skia failed to parse TTF bytes")
+        }
 
         EditorFont(typeface = typeface, size = fontSize, lineSpacing = 1.2f)
     }
 
+    DisposableEffect(font) {
+        onDispose {
+            font.close()
+        }
+    }
+
     val colorScheme = when {
         isSystemInDarkTheme() -> darkColorScheme()
-
         else -> lightColorScheme()
     }
 
@@ -83,15 +93,17 @@ fun App(fontBytes: ByteArray) {
     }
 
     val scrollController = rememberEditorScrollController()
+    val keyboardInset = rememberKeyboardBottomInset()
 
     MaterialTheme(colorScheme = colorScheme) {
-        Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+        Box(modifier = Modifier.fillMaxSize().background(theme.editor.background).systemBarsPadding()) {
             KortexCodeEditor(
                 engine = codeEditorEngine,
                 font = font,
                 theme = theme,
                 scrollController = scrollController,
-                modifier = Modifier.fillMaxSize()
+                bottomInset = keyboardInset,
+                modifier = Modifier.fillMaxSize(),
             )
 
             EditorScrollbars(scrollController = scrollController, modifier = Modifier.fillMaxSize())

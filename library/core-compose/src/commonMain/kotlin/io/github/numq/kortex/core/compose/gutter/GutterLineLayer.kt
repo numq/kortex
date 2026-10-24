@@ -15,7 +15,7 @@ data class GutterLineLayer(
     val isCurrentLine: Boolean = false,
 ) : Layer {
     override fun render(canvas: Canvas) {
-        if (!paint.isClosed) {
+        if (!paint.isClosed && !textLine.isClosed) {
             canvas.drawTextLine(line = textLine, x = textX, y = textY, paint = paint)
         }
     }

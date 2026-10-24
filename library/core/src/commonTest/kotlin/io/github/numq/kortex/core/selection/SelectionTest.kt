@@ -1,7 +1,5 @@
-package io.gthub.numq.kortex.core.selection
+package io.github.numq.kortex.core.selection
 
-import io.github.numq.kortex.core.selection.Selection
-import io.github.numq.kortex.core.selection.SelectionDirection
 import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextRange
 import kotlin.test.Test

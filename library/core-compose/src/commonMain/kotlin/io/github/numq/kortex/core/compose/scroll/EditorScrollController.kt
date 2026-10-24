@@ -5,6 +5,10 @@ import io.github.numq.kortex.core.compose.layout.EditorLayoutInfo
 import io.github.numq.krope.text.TextPosition
 import kotlin.math.max
 
+/**
+ * Controller managing horizontal and vertical scroll offsets, clamping scroll bounds,
+ * and coordinating viewport layout information.
+ */
 @Stable
 class EditorScrollController {
     var horizontalOffset by mutableFloatStateOf(0f)
@@ -76,16 +80,17 @@ class EditorScrollController {
         editorPaddingStart: Float = 0f,
         horizontalMarginChars: Int = 2,
         verticalMarginLines: Int = 1,
+        bottomInset: Float = 0f,
     ) {
         if (layoutInfo.viewportHeight <= 0f || layoutInfo.viewportWidth <= 0f) return
 
         val (line, column) = target
 
         val absoluteLineTop = line * lineHeight
-
         val absoluteLineBottom = absoluteLineTop + lineHeight
-
         val verticalMargin = lineHeight * verticalMarginLines
+
+        val visibleViewportHeight = (layoutInfo.viewportHeight - bottomInset).coerceAtLeast(lineHeight)
 
         val nextY = when {
             absoluteLineTop < verticalOffset + verticalMargin -> {
@@ -93,17 +98,15 @@ class EditorScrollController {
                 else absoluteLineTop - verticalMargin
             }
 
-            absoluteLineBottom > verticalOffset + layoutInfo.viewportHeight - verticalMargin -> {
-                val target = absoluteLineBottom - layoutInfo.viewportHeight + verticalMargin
-
-                target.coerceAtMost(layoutInfo.maxScrollY)
+            absoluteLineBottom > verticalOffset + visibleViewportHeight - verticalMargin -> {
+                val targetScroll = absoluteLineBottom - visibleViewportHeight + verticalMargin
+                targetScroll.coerceAtMost(layoutInfo.maxScrollY)
             }
 
             else -> verticalOffset
         }
 
         val absoluteCaretX = editorPaddingStart + (column * charWidth)
-
         val horizontalMargin = charWidth * horizontalMarginChars
 
         val visibleTextWidth = when {
@@ -114,7 +117,6 @@ class EditorScrollController {
 
         val nextX = when {
             absoluteCaretX < horizontalOffset + horizontalMargin -> max(0f, absoluteCaretX - horizontalMargin)
-
 
             visibleTextWidth > 0f && absoluteCaretX > horizontalOffset + visibleTextWidth - horizontalMargin -> absoluteCaretX - visibleTextWidth + horizontalMargin
 

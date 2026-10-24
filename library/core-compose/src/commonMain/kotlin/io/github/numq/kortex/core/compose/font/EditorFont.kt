@@ -1,10 +1,18 @@
 package io.github.numq.kortex.core.compose.font
 
+import io.github.numq.kortex.core.cache.LruCache
 import io.github.numq.kortex.core.lifecycle.CloseableResource
 import org.jetbrains.skia.*
 import org.jetbrains.skia.impl.use
 import org.jetbrains.skia.paragraph.*
 
+/**
+ * Monospace font wrapper backed by Skia Font and Paragraph subsystems.
+ *
+ * @property typeface The Skia [Typeface].
+ * @property size Font size in points.
+ * @property lineSpacing Line height multiplier (e.g. 1.2f).
+ */
 class EditorFont(val typeface: Typeface, val size: Float, val lineSpacing: Float) : CloseableResource() {
     private val fontProvider = TypefaceFontProvider().apply {
         registerTypeface(typeface)
@@ -42,29 +50,38 @@ class EditorFont(val typeface: Typeface, val size: Float, val lineSpacing: Float
 
     val familyName = typeface.familyName
 
+    private val measurementParagraphCache = object : LruCache<String, Paragraph>(capacity = 128) {
+        override val factory: String.() -> Paragraph = {
+            val textToMeasure = this
+            TextStyle().apply {
+                this.fontFamilies = arrayOf(this@EditorFont.familyName)
+                this.fontSize = this@EditorFont.size
+            }.use { baseTextStyle ->
+                ParagraphStyle().apply {
+                    this.maxLinesCount = 1
+                    this.textStyle = baseTextStyle
+                }.use { style ->
+                    buildParagraph(style) {
+                        pushStyle(baseTextStyle)
+                        addText(textToMeasure)
+                        popStyle()
+                    }.use { builder ->
+                        builder.build().apply {
+                            layout(Float.MAX_VALUE)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun getOffsetAtCoordinate(text: String, x: Float): Int {
         if (x <= 0f || text.isEmpty()) return 0
 
         checkOpen()
 
-        val offset = TextStyle().apply {
-            this.fontFamilies = arrayOf(this@EditorFont.familyName)
-            this.fontSize = this@EditorFont.size
-        }.use { baseTextStyle ->
-            ParagraphStyle().apply {
-                this.maxLinesCount = 1
-                this.textStyle = baseTextStyle
-            }.use { style ->
-                buildParagraph(style) {
-                    addText(text)
-                }.use { builder ->
-                    builder.build().use { paragraph ->
-                        paragraph.layout(Float.MAX_VALUE)
-                        paragraph.getGlyphPositionAtCoordinate(x, 0f).position
-                    }
-                }
-            }
-        }
+        val paragraph = measurementParagraphCache.getOrCreate(text).getOrThrow()
+        val offset = paragraph.getGlyphPositionAtCoordinate(x, 0f).position
 
         return offset.coerceIn(0, text.length)
     }
@@ -88,6 +105,8 @@ class EditorFont(val typeface: Typeface, val size: Float, val lineSpacing: Float
     }
 
     override fun onRelease() {
+        measurementParagraphCache.close()
+
         skiaFont.close()
 
         collection.close()

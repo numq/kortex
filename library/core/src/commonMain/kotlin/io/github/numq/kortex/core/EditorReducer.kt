@@ -11,6 +11,10 @@ import io.github.numq.kortex.core.selection.SelectionReducer
 import io.github.numq.kortex.core.viewport.ViewportAction
 import io.github.numq.kortex.core.viewport.ViewportReducer
 
+/**
+ * Central pure state reducer dispatching actions to specialized reducers
+ * (caret, selection, edit, viewport, history).
+ */
 object EditorReducer {
     fun reduce(state: EditorState, action: EditorAction) = when (action) {
         is EditAction -> EditReducer.reduce(state, action)

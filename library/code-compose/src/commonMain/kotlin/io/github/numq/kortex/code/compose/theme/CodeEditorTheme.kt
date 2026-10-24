@@ -10,6 +10,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import io.github.numq.kortex.core.compose.theme.EditorTheme
 
+/**
+ * Complete visual theme for [io.github.numq.kortex.code.compose.KortexCodeEditor].
+ *
+ * @property editor Base theme for the editor chrome, gutter, and caret.
+ * @property syntax Theme for syntax highlighting.
+ * @property diagnostics Colors for diagnostic issue underlines.
+ * @property occurrences Colors for symbol occurrence highlights.
+ * @property folding Colors for folding triangles.
+ * @property ruler Color of the vertical column guide.
+ */
 @Immutable
 data class CodeEditorTheme(
     val editor: EditorTheme,
@@ -20,6 +30,7 @@ data class CodeEditorTheme(
     val ruler: Color = editor.gutter.divider.copy(alpha = .3f),
 ) {
     companion object {
+        /** Creates a [CodeEditorTheme] adapted to the provided Material 3 [colorScheme]. */
         fun fromColorScheme(
             colorScheme: ColorScheme, isDark: Boolean = colorScheme.surface.luminance() < .5f
         ): CodeEditorTheme {
@@ -46,6 +57,7 @@ data class CodeEditorTheme(
     }
 }
 
+/** Remembers a [CodeEditorTheme] adapting dynamically to dark/light theme state. */
 @Composable
 fun rememberCodeEditorTheme(
     colorScheme: ColorScheme = MaterialTheme.colorScheme, isDark: Boolean = isSystemInDarkTheme()

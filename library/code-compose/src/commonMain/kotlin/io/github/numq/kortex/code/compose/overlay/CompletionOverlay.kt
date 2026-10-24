@@ -5,15 +5,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import io.github.numq.kortex.code.CodeEditorState
+import io.github.numq.kortex.core.compose.dimensions.EditorDimensions
 import io.github.numq.kortex.core.compose.font.EditorFont
 import io.github.numq.kortex.core.compose.scroll.EditorScrollController
 import io.github.numq.kortex.core.viewport.FoldMap
@@ -23,8 +26,9 @@ internal fun CompletionOverlay(
     completion: CodeEditorState.CompletionState.Visible,
     foldMap: FoldMap,
     font: EditorFont,
+    dimensions: EditorDimensions,
     scrollController: EditorScrollController,
-    onSelect: () -> Unit,
+    onSelect: (index: Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val anchor = completion.anchorPosition
@@ -32,15 +36,24 @@ internal fun CompletionOverlay(
     val visualLine = foldMap.documentToVisualLine(anchor.line)
 
     val calculatedX =
-        scrollController.gutterWidth + (anchor.column * font.charWidth) - scrollController.horizontalOffset
+        scrollController.gutterWidth + dimensions.editorPaddingStart + (anchor.column * font.charWidth) - scrollController.horizontalOffset
 
     val calculatedY = (visualLine * font.lineHeight) + font.lineHeight - scrollController.verticalOffset
 
     val safeX = calculatedX.coerceIn(
-        scrollController.gutterWidth, maxOf(scrollController.gutterWidth, scrollController.viewportWidth - 350f)
+        scrollController.gutterWidth,
+        maxOf(scrollController.gutterWidth, scrollController.viewportWidth - 350f),
     )
 
     val safeY = calculatedY.coerceAtLeast(0f)
+
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(completion.selectedIndex) {
+        if (completion.selectedIndex in completion.suggestions.indices) {
+            listState.animateScrollToItem(completion.selectedIndex)
+        }
+    }
 
     Popup(
         alignment = androidx.compose.ui.Alignment.TopStart,
@@ -54,26 +67,27 @@ internal fun CompletionOverlay(
             shadowElevation = 4.dp,
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
-            LazyColumn(modifier = Modifier.fillMaxWidth().padding(4.dp)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().padding(4.dp),
+            ) {
                 itemsIndexed(completion.suggestions) { index, suggestion ->
                     val isSelected = index == completion.selectedIndex
 
                     val itemBackground = when {
                         isSelected -> MaterialTheme.colorScheme.primaryContainer
-
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     }
 
                     val itemForeground = when {
                         isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
-
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
 
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .background(itemBackground, shape = MaterialTheme.shapes.extraSmall)
-                            .clickable(onClick = onSelect).padding(horizontal = 8.dp, vertical = 4.dp),
+                            .clickable { onSelect(index) }.padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(

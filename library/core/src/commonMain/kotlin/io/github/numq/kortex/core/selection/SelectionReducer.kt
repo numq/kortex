@@ -43,9 +43,18 @@ internal object SelectionReducer {
         val isOperator = ":!#$%&*+./<=>?@\\^|-~".contains(firstChar)
 
         if (!isIdentifier && !isOperator) {
-            val start = TextPosition(line = position.line, column = column)
+            val startCol = when {
+                firstChar.isLowSurrogate() && column > 0 && lineText[column - 1].isHighSurrogate() -> column - 1
+                else -> column
+            }
 
-            val end = TextPosition(line = position.line, column = column + 1)
+            val endCol = when {
+                lineText[startCol].isHighSurrogate() && startCol + 1 < lineText.length && lineText[startCol + 1].isLowSurrogate() -> startCol + 2
+                else -> startCol + 1
+            }
+
+            val start = TextPosition(line = position.line, column = startCol)
+            val end = TextPosition(line = position.line, column = endCol)
 
             return state.copy(selections = listOf(Selection.fromPositions(anchor = start, caret = end)))
         }

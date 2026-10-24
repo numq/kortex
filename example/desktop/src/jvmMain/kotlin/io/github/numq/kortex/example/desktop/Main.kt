@@ -7,7 +7,8 @@ import java.io.InputStream
 
 fun main() = application {
     val fontBytes =
-        object {}.javaClass.classLoader?.getResourceAsStream("files/JetBrainsMono-Regular.ttf")?.use(InputStream::readBytes)
+        object {}.javaClass.classLoader?.getResourceAsStream("files/JetBrainsMono-Regular.ttf")
+            ?.use(InputStream::readBytes)
             ?: error("Font not found in resources")
 
     Window(onCloseRequest = ::exitApplication, title = "Kortex") {

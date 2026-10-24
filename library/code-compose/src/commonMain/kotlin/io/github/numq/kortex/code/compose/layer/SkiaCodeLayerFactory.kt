@@ -63,7 +63,7 @@ internal class SkiaCodeLayerFactory(
                 line = viewportLine.line,
                 rect = Rect.makeXYWH(x, y, size, size),
                 isCollapsed = viewportLine.line in collapsedLines,
-                paint = paint
+                paint = paint,
             )
         }
     }
@@ -99,7 +99,7 @@ internal class SkiaCodeLayerFactory(
                 text = viewportLine.text,
                 tokens = tokens,
                 font = font,
-                syntaxTheme = theme.syntax
+                syntaxTheme = theme.syntax,
             )
         ).getOrThrow()
 
@@ -107,7 +107,7 @@ internal class SkiaCodeLayerFactory(
             viewportLine = viewportLine,
             paragraph = paragraph,
             x = -scrollX + dimensions.editorPaddingStart,
-            y = viewportLine.textBaselineY + font.ascent
+            y = viewportLine.textBaselineY + font.ascent,
         )
     }
 
@@ -118,6 +118,8 @@ internal class SkiaCodeLayerFactory(
         scrollX: Float,
         theme: CodeEditorTheme,
     ): List<OccurrencesHighlightLayer> {
+        if (occurrences.isEmpty()) return emptyList()
+
         val matchPaint = paintCache.getOrCreate(
             PaintCache.Key(color = theme.occurrences.matchBackground.toArgb())
         ).getOrThrow()
@@ -127,24 +129,35 @@ internal class SkiaCodeLayerFactory(
         ).getOrThrow()
 
         return contentLayers.flatMap { layer ->
-            occurrences.filter { occurrence ->
-                occurrence.range.start.line == layer.viewportLine.line
-            }.map { occurrence ->
-                val startX = layer.getCoordinateAtOffset(occurrence.range.start.column)
+            val line = layer.viewportLine.line
+            val lineLen = layer.viewportLine.text.length
 
-                val endX = layer.getCoordinateAtOffset(occurrence.range.end.column)
+            occurrences.filter { occurrence ->
+                line in occurrence.range.start.line..occurrence.range.end.line
+            }.mapNotNull { occurrence ->
+                val startCol = if (line == occurrence.range.start.line) {
+                    occurrence.range.start.column.coerceIn(0, lineLen)
+                } else 0
+
+                val endCol = if (line == occurrence.range.end.line) {
+                    occurrence.range.end.column.coerceIn(startCol, lineLen)
+                } else lineLen
+
+                val startX = layer.getCoordinateAtOffset(startCol)
+                val endX = layer.getCoordinateAtOffset(endCol)
+
+                if (endX <= startX) return@mapNotNull null
 
                 val x = -scrollX + startX + dimensions.editorPaddingStart
 
                 val paint = when {
                     occurrence.range.contains(caret.position) -> currentPaint
-
                     else -> matchPaint
                 }
 
                 OccurrencesHighlightLayer(
                     rect = Rect.makeXYWH(x, layer.viewportLine.y, endX - startX, layer.viewportLine.height),
-                    paint = paint
+                    paint = paint,
                 )
             }
         }
@@ -156,22 +169,29 @@ internal class SkiaCodeLayerFactory(
         scrollX: Float,
         theme: CodeEditorTheme,
     ): List<DiagnosticsLayer> = contentLayers.flatMap { layer ->
-        issues.filter { issue ->
-            issue.range.start.line == layer.viewportLine.line
-        }.map { issue ->
-            val startX = layer.getCoordinateAtOffset(issue.range.start.column)
+        val line = layer.viewportLine.line
+        val lineLen = layer.viewportLine.text.length
 
-            val endX = layer.getCoordinateAtOffset(issue.range.end.column)
+        issues.filter { issue ->
+            line in issue.range.start.line..issue.range.end.line
+        }.map { issue ->
+            val startCol = if (line == issue.range.start.line) {
+                issue.range.start.column.coerceIn(0, lineLen)
+            } else 0
+
+            val endCol = if (line == issue.range.end.line) {
+                issue.range.end.column.coerceIn(startCol, lineLen)
+            } else lineLen
+
+            val startX = layer.getCoordinateAtOffset(startCol)
+            val rawEndX = layer.getCoordinateAtOffset(endCol)
+            val endX = if (rawEndX > startX) rawEndX else startX + 6f
 
             val color = when (issue) {
                 is CodeIssue.Error -> theme.diagnostics.error
-
                 is CodeIssue.Warning -> theme.diagnostics.warning
-
                 is CodeIssue.Information -> theme.diagnostics.info
-
                 is CodeIssue.Hint -> theme.diagnostics.hint
-
                 is CodeIssue.Unknown -> theme.diagnostics.hint
             }
 
@@ -183,27 +203,26 @@ internal class SkiaCodeLayerFactory(
                 startX = startX - scrollX + dimensions.editorPaddingStart,
                 endX = endX - scrollX + dimensions.editorPaddingStart,
                 baselineY = layer.viewportLine.textBaselineY,
-                paint = paint
+                paint = paint,
             )
         }
     }
 
     override fun close() {
         baseFactory.close()
-
-        paintCache.close()
-
         codeParagraphCache.close()
     }
 }
 
+/**
+ * Creates and remembers a [CodeLayerFactory] tied to the Composable lifecycle,
+ * safely closing underlying Skia paint and paragraph caches on disposal.
+ */
 @Composable
 fun rememberCodeLayerFactory(dimensions: EditorDimensions): CodeLayerFactory {
     val factory = remember(dimensions) {
         val paintCache = PaintCache(1000)
-
         val textLineCache = TextLineCache(1000)
-
         val codeParagraphCache = CodeParagraphCache(1000)
 
         val baseFactory = SkiaLayerFactory(

@@ -8,7 +8,7 @@ import org.jetbrains.skia.FontMgr
 import org.jetbrains.skia.Typeface
 import org.jetbrains.skia.impl.use
 
-internal class SkiaFontManager : CloseableResource(), FontManager {
+class SkiaFontManager : CloseableResource(), FontManager {
     private val lock = SynchronizedObject()
 
     private data class FontKey(val size: Int, val hash: Int)

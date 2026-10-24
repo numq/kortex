@@ -1,8 +1,9 @@
 package io.github.numq.kortex.core.compose.canvas
 
-import android.graphics.PixelFormat
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -16,11 +17,13 @@ import org.jetbrains.skiko.SkikoSurfaceView
 import java.util.concurrent.atomic.AtomicReference
 
 @Composable
-actual fun SkiaCanvas(modifier: Modifier, onRender: (canvas: Canvas, width: Int, height: Int) -> Unit) {
+actual fun SkiaCanvas(
+    modifier: Modifier,
+    onRender: (canvas: Canvas, width: Int, height: Int) -> Unit,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val onRenderRef = remember { AtomicReference(onRender) }
-
     onRenderRef.set(onRender)
 
     var surfaceView by remember { mutableStateOf<SkikoSurfaceView?>(null) }
@@ -31,22 +34,11 @@ actual fun SkiaCanvas(modifier: Modifier, onRender: (canvas: Canvas, width: Int,
                 override fun onRender(canvas: Canvas, width: Int, height: Int, nanoTime: Long) {
                     if (width <= 0 || height <= 0) return
 
-                    val scale = contentScale.takeIf { it > 0f } ?: 1f
-
-                    val scaledWidth = (width / scale).toInt()
-
-                    val scaledHeight = (height / scale).toInt()
-
-                    if (scaledWidth > 0 && scaledHeight > 0) {
-                        val saveCount = canvas.save()
-
-                        try {
-                            canvas.scale(scale, scale)
-
-                            onRenderRef.get().invoke(canvas, scaledWidth, scaledHeight)
-                        } finally {
-                            canvas.restoreToCount(saveCount)
-                        }
+                    val saveCount = canvas.save()
+                    try {
+                        onRenderRef.get().invoke(canvas, width, height)
+                    } finally {
+                        canvas.restoreToCount(saveCount)
                     }
                 }
             }
@@ -64,12 +56,10 @@ actual fun SkiaCanvas(modifier: Modifier, onRender: (canvas: Canvas, width: Int,
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     view.onResume()
-
                     view.scheduleFrame()
                 }
 
                 Lifecycle.Event.ON_PAUSE -> view.onPause()
-
                 else -> Unit
             }
         }
@@ -78,7 +68,6 @@ actual fun SkiaCanvas(modifier: Modifier, onRender: (canvas: Canvas, width: Int,
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-
             view.onPause()
         }
     }
@@ -86,25 +75,24 @@ actual fun SkiaCanvas(modifier: Modifier, onRender: (canvas: Canvas, width: Int,
     DisposableEffect(layer) {
         onDispose {
             surfaceView = null
-
             layer.detach()
         }
     }
 
     AndroidView(
         modifier = modifier,
-        factory = { context ->
-            SkikoSurfaceView(context, layer).apply {
-                layoutParams = ViewGroup.LayoutParams(
+        factory = { ctx ->
+            val skikoView = SkikoSurfaceView(ctx, layer).apply {
+                layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
 
-                setZOrderMediaOverlay(true)
+                isFocusable = false
+                isFocusableInTouchMode = false
+                isClickable = false
 
-                holder.setFormat(PixelFormat.TRANSLUCENT)
-
-                holder.addCallback(object : SurfaceHolder.Callback {
+                holder.addCallback(object : SurfaceHolder.Callback2 {
                     override fun surfaceCreated(holder: SurfaceHolder) {
                         scheduleFrame()
                     }
@@ -113,14 +101,34 @@ actual fun SkiaCanvas(modifier: Modifier, onRender: (canvas: Canvas, width: Int,
                         scheduleFrame()
                     }
 
+                    override fun surfaceRedrawNeeded(holder: SurfaceHolder) {
+                        scheduleFrame()
+                    }
+
                     override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
                 })
 
                 surfaceView = this
             }
+
+            object : FrameLayout(ctx) {
+                init {
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    isClickable = false
+                    addView(skikoView)
+                }
+
+                override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+                    super.onSizeChanged(w, h, oldw, oldh)
+                    skikoView.scheduleFrame()
+                }
+
+                override fun dispatchTouchEvent(ev: MotionEvent?): Boolean = false
+            }
         },
-        update = { view ->
-            view.scheduleFrame()
+        update = {
+            surfaceView?.scheduleFrame()
         },
     )
 }

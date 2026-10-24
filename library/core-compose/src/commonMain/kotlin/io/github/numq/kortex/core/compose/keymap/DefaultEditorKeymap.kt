@@ -7,6 +7,13 @@ import io.github.numq.kortex.core.history.HistoryAction
 import io.github.numq.kortex.core.selection.SelectionAction
 
 object DefaultEditorKeymap {
+    private fun pageLineCount(viewportHeight: Float, lineHeight: Float): Int =
+        if (lineHeight > 0f && viewportHeight > 0f) {
+            (viewportHeight * 0.9f / lineHeight).toInt().coerceAtLeast(1)
+        } else {
+            25
+        }
+
     fun create(): EditorKeymap = buildEditorKeymap {
         bind(Key.Escape, description = "Clear Selection") {
             dispatch(SelectionAction.Clear)
@@ -28,17 +35,35 @@ object DefaultEditorKeymap {
             dispatch(HistoryAction.Redo)
         }
 
+        bind(Key.Y, primary = true, shift = false, requiresEditable = true, description = "Redo") {
+            dispatch(HistoryAction.Redo)
+        }
+
         bind(Key.C, primary = true, description = "Copy") { copy() }
+
+        bind(Key.Insert, primary = true, description = "Copy") { copy() }
 
         bind(Key.X, primary = true, requiresEditable = true, description = "Cut") { cut() }
 
+        bind(Key.Delete, shift = true, requiresEditable = true, description = "Cut") { cut() }
+
         bind(Key.V, primary = true, requiresEditable = true, description = "Paste") { paste() }
+
+        bind(Key.Insert, shift = true, requiresEditable = true, description = "Paste") { paste() }
 
         bind(Key.D, primary = true, shift = true, requiresEditable = true, description = "Duplicate Line/Selection") {
             dispatch(EditAction.Duplicate)
         }
 
-        bind(Key.Backspace, requiresEditable = true, description = "Backspace") {
+        bind(Key.J, primary = true, shift = true, requiresEditable = true, description = "Join Lines") {
+            dispatch(EditAction.JoinLines)
+        }
+
+        bind(Key.Backspace, shift = false, requiresEditable = true, description = "Backspace") {
+            dispatch(EditAction.Backspace)
+        }
+
+        bind(Key.Backspace, shift = true, requiresEditable = true, description = "Backspace") {
             dispatch(EditAction.Backspace)
         }
 
@@ -46,7 +71,11 @@ object DefaultEditorKeymap {
             dispatch(EditAction.WordDeleteLeft)
         }
 
-        bind(Key.Delete, requiresEditable = true, description = "Delete") {
+        bind(Key.Backspace, alt = true, requiresEditable = true, description = "Delete Word Left") {
+            dispatch(EditAction.WordDeleteLeft)
+        }
+
+        bind(Key.Delete, shift = false, requiresEditable = true, description = "Delete") {
             dispatch(EditAction.Delete)
         }
 
@@ -54,7 +83,15 @@ object DefaultEditorKeymap {
             dispatch(EditAction.WordDeleteRight)
         }
 
-        bind(setOf(Key.Enter, Key.NumPadEnter), requiresEditable = true, description = "New Line") {
+        bind(Key.Delete, alt = true, requiresEditable = true, description = "Delete Word Right") {
+            dispatch(EditAction.WordDeleteRight)
+        }
+
+        bind(setOf(Key.Enter, Key.NumPadEnter), shift = false, requiresEditable = true, description = "New Line") {
+            dispatch(EditAction.Enter)
+        }
+
+        bind(setOf(Key.Enter, Key.NumPadEnter), shift = true, requiresEditable = true, description = "New Line") {
             dispatch(EditAction.Enter)
         }
 
@@ -74,9 +111,7 @@ object DefaultEditorKeymap {
             dispatch(EditAction.MoveLineDown)
         }
 
-        bind(
-            Key.DirectionLeft, primary = false, shift = false
-        ) {
+        bind(Key.DirectionLeft, primary = false, shift = false) {
             dispatch(CaretAction.MoveLeft(withSelection = false))
         }
 
@@ -84,51 +119,51 @@ object DefaultEditorKeymap {
             dispatch(CaretAction.MoveLeft(withSelection = true))
         }
 
-        bind(
-            Key.DirectionLeft, primary = true, shift = false
-        ) {
+        bind(Key.DirectionLeft, primary = true, shift = false) {
             dispatch(CaretAction.MoveWordLeft(withSelection = false))
         }
 
-        bind(
-            Key.DirectionLeft, primary = true, shift = true
-        ) {
+        bind(Key.DirectionLeft, primary = true, shift = true) {
             dispatch(CaretAction.MoveWordLeft(withSelection = true))
         }
 
-        bind(
-            Key.DirectionRight, primary = false, shift = false
-        ) {
+        bind(Key.DirectionLeft, alt = true, shift = false) {
+            dispatch(CaretAction.MoveWordLeft(withSelection = false))
+        }
+
+        bind(Key.DirectionLeft, alt = true, shift = true) {
+            dispatch(CaretAction.MoveWordLeft(withSelection = true))
+        }
+
+        bind(Key.DirectionRight, primary = false, shift = false) {
             dispatch(CaretAction.MoveRight(withSelection = false))
         }
 
-        bind(
-            Key.DirectionRight, primary = false, shift = true
-        ) {
+        bind(Key.DirectionRight, primary = false, shift = true) {
             dispatch(CaretAction.MoveRight(withSelection = true))
         }
 
-        bind(
-            Key.DirectionRight, primary = true, shift = false
-        ) {
+        bind(Key.DirectionRight, primary = true, shift = false) {
             dispatch(CaretAction.MoveWordRight(withSelection = false))
         }
 
-        bind(
-            Key.DirectionRight, primary = true, shift = true
-        ) {
+        bind(Key.DirectionRight, primary = true, shift = true) {
             dispatch(CaretAction.MoveWordRight(withSelection = true))
         }
 
-        bind(
-            Key.DirectionUp, primary = false, shift = false, alt = false
-        ) {
+        bind(Key.DirectionRight, alt = true, shift = false) {
+            dispatch(CaretAction.MoveWordRight(withSelection = false))
+        }
+
+        bind(Key.DirectionRight, alt = true, shift = true) {
+            dispatch(CaretAction.MoveWordRight(withSelection = true))
+        }
+
+        bind(Key.DirectionUp, primary = false, shift = false, alt = false) {
             dispatch(CaretAction.MoveUp(withSelection = false))
         }
 
-        bind(
-            Key.DirectionUp, primary = false, shift = true, alt = false
-        ) {
+        bind(Key.DirectionUp, primary = false, shift = true, alt = false) {
             dispatch(CaretAction.MoveUp(withSelection = true))
         }
 
@@ -140,9 +175,7 @@ object DefaultEditorKeymap {
             dispatch(CaretAction.MoveDown(withSelection = true))
         }
 
-        bind(
-            Key.MoveHome, primary = false, shift = false
-        ) {
+        bind(Key.MoveHome, primary = false, shift = false) {
             dispatch(CaretAction.MoveLineStart(withSelection = false))
         }
 
@@ -175,27 +208,27 @@ object DefaultEditorKeymap {
         }
 
         bind(Key.PageUp, shift = false) {
+            val lines = pageLineCount(scrollController.viewportHeight, scrollController.layoutInfo.lineHeight)
             scrollPage(up = true)
-
-            dispatch(CaretAction.MoveDocStart(withSelection = false))
+            dispatch(CaretAction.MovePageUp(lines = lines, withSelection = false))
         }
 
         bind(Key.PageUp, shift = true) {
+            val lines = pageLineCount(scrollController.viewportHeight, scrollController.layoutInfo.lineHeight)
             scrollPage(up = true)
-
-            dispatch(CaretAction.MoveDocStart(withSelection = true))
+            dispatch(CaretAction.MovePageUp(lines = lines, withSelection = true))
         }
 
         bind(Key.PageDown, shift = false) {
+            val lines = pageLineCount(scrollController.viewportHeight, scrollController.layoutInfo.lineHeight)
             scrollPage(up = false)
-
-            dispatch(CaretAction.MoveDocEnd(withSelection = false))
+            dispatch(CaretAction.MovePageDown(lines = lines, withSelection = false))
         }
 
         bind(Key.PageDown, shift = true) {
+            val lines = pageLineCount(scrollController.viewportHeight, scrollController.layoutInfo.lineHeight)
             scrollPage(up = false)
-
-            dispatch(CaretAction.MoveDocEnd(withSelection = true))
+            dispatch(CaretAction.MovePageDown(lines = lines, withSelection = true))
         }
     }
 }

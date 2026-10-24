@@ -5,6 +5,12 @@ import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextRange
 import kotlin.time.Duration.Companion.milliseconds
 
+/**
+ * Manages undo and redo stacks for text modifications, automatically merging
+ * contiguous typing and deletion operations performed within a 700ms window.
+ *
+ * @param maxHistorySize Maximum number of undo steps preserved in memory.
+ */
 class HistoryManager(private val maxHistorySize: Int = 200) {
     private val undoStack = ArrayDeque<HistoryEntry>()
 
@@ -14,6 +20,7 @@ class HistoryManager(private val maxHistorySize: Int = 200) {
 
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
+    /** Records a new history step, potentially merging it with the previous entry. */
     fun record(entry: HistoryEntry) {
         redoStack.clear()
 
@@ -38,10 +45,13 @@ class HistoryManager(private val maxHistorySize: Int = 200) {
         }
     }
 
+    /** Pops the last undo entry, placing it onto the redo stack. */
     fun popUndo() = undoStack.removeLastOrNull()?.also(redoStack::addLast)
 
-    fun popRedo() = redoStack.removeLastOrNull()?.also(redoStack::addLast)
+    /** Pops the last redo entry, placing it back onto the undo stack. */
+    fun popRedo() = redoStack.removeLastOrNull()?.also(undoStack::addLast)
 
+    /** Clears both undo and redo stacks. */
     fun clear() {
         undoStack.clear()
 

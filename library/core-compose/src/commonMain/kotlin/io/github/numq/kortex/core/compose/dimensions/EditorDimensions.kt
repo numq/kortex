@@ -1,5 +1,8 @@
 package io.github.numq.kortex.core.compose.dimensions
 
+/**
+ * Layout padding, gap, and caret sizing dimensions (in pixels).
+ */
 data class EditorDimensions(
     val caretWidth: Float = 2f,
     val gutterPaddingStart: Float = 8f,

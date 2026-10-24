@@ -2,6 +2,14 @@ package io.github.numq.kortex.code.token
 
 import kotlin.jvm.JvmInline
 
+/**
+ * Value class representing the hierarchical semantic type of token.
+ *
+ * Subtypes use dot-separated notation (e.g. `keyword.control`), allowing syntax themes
+ * to resolve colors using hierarchical fallback if a specific variant is omitted.
+ *
+ * @property name The dot-separated identifier of the token type.
+ */
 @JvmInline
 value class TokenType(val name: String) {
     companion object {

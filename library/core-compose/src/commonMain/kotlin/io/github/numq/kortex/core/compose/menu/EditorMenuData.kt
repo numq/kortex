@@ -3,6 +3,9 @@ package io.github.numq.kortex.core.compose.menu
 import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextRange
 
+/**
+ * State and callback payload passed to context menu composables.
+ */
 data class EditorMenuData(
     val x: Float,
     val y: Float,

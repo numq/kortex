@@ -14,8 +14,13 @@ import io.github.numq.kortex.core.lifecycle.ManagedResource
 import io.github.numq.kortex.core.selection.Selection
 import io.github.numq.kortex.core.viewport.ViewportLine
 
+/**
+ * Factory producing cached Skia rendering layers for the text editor canvas.
+ */
 interface LayerFactory : ManagedResource {
     fun createBackgroundLayer(width: Float, height: Float, theme: EditorTheme): BackgroundLayer
+
+    fun createGutterBackgroundLayer(width: Float, height: Float, theme: EditorTheme): BackgroundLayer?
 
     fun createHighlightedLineLayer(
         viewportLines: List<ViewportLine>,
@@ -29,6 +34,7 @@ interface LayerFactory : ManagedResource {
         textY: Float,
         font: EditorFont,
         theme: EditorTheme,
+        isCurrentLine: Boolean = false,
     ): GutterLineLayer
 
     fun createGutterSeparatorLayer(x: Float, height: Float, theme: EditorTheme): GutterSeparatorLayer

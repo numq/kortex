@@ -1,5 +1,9 @@
 package io.github.numq.kortex.core.viewport
 
+/**
+ * Precomputed, binary-searchable mapping between 0-based document lines and visual lines on screen,
+ * taking into account all collapsed code folding ranges.
+ */
 class FoldMap private constructor(
     val totalDocumentLines: Int,
     private val intervals: List<Interval>,
@@ -19,37 +23,30 @@ class FoldMap private constructor(
         interval.startLine..interval.endLine
     }
 
+    /** Returns `true` if [documentLine] is currently folded and hidden from display. */
     fun isLineHidden(documentLine: Int) = when {
         intervals.isEmpty() || documentLine < 0 || documentLine >= totalDocumentLines -> false
-
         else -> {
             val idx = findIntervalIndexForDocumentLine(documentLine)
-
             idx in intervals.indices && documentLine in intervals[idx].startLine..intervals[idx].endLine
         }
     }
 
+    /** Maps a visual line index (as seen on screen) to the corresponding document line. */
     fun visualToDocumentLine(visualLine: Int) = when {
         intervals.isEmpty() -> visualLine.coerceIn(0, (totalDocumentLines - 1).coerceAtLeast(0))
-
         visualLine <= 0 -> 0
-
         visualLine >= totalVisualLines -> (totalDocumentLines - 1).coerceAtLeast(0)
-
         else -> {
             var low = 0
-
             var high = intervals.size - 1
-
             var resultIndex = intervals.size
 
             while (low <= high) {
                 val mid = (low + high) ushr 1
-
                 when {
                     visualLine < intervals[mid].visualStartThreshold -> {
                         resultIndex = mid
-
                         high = mid - 1
                     }
 
@@ -59,7 +56,6 @@ class FoldMap private constructor(
 
             val cumulativeHidden = when {
                 resultIndex < intervals.size -> intervals[resultIndex].cumulativeHiddenBefore
-
                 else -> totalHiddenLines
             }
 
@@ -67,30 +63,25 @@ class FoldMap private constructor(
         }
     }
 
+    /** Maps a document line index to the corresponding visual line on screen. */
     fun documentToVisualLine(documentLine: Int): Int {
         if (intervals.isEmpty()) return documentLine.coerceIn(0, (totalVisualLines - 1).coerceAtLeast(0))
 
         val clampedDocLine = documentLine.coerceIn(0, (totalDocumentLines - 1).coerceAtLeast(0))
 
         var low = 0
-
         var high = intervals.size - 1
-
         var insideInterval: Interval? = null
 
         while (low <= high) {
             val mid = (low + high) ushr 1
-
             val interval = intervals[mid]
 
             when {
                 clampedDocLine < interval.startLine -> high = mid - 1
-
                 clampedDocLine > interval.endLine -> low = mid + 1
-
                 else -> {
                     insideInterval = interval
-
                     break
                 }
             }
@@ -98,13 +89,11 @@ class FoldMap private constructor(
 
         if (insideInterval != null) {
             val visiblePrecedingDocLine = (insideInterval.startLine - 1).coerceAtLeast(0)
-
             return documentToVisualLine(visiblePrecedingDocLine)
         }
 
         val cumulativeHidden = when {
             high >= 0 -> intervals[high].cumulativeHiddenBefore + intervals[high].hiddenCount
-
             else -> 0
         }
 
@@ -113,19 +102,15 @@ class FoldMap private constructor(
 
     private fun findIntervalIndexForDocumentLine(documentLine: Int): Int {
         var low = 0
-
         var high = intervals.size - 1
 
         while (low <= high) {
             val mid = (low + high) ushr 1
-
             val interval = intervals[mid]
 
             when {
                 documentLine < interval.startLine -> high = mid - 1
-
                 documentLine > interval.endLine -> low = mid + 1
-
                 else -> return mid
             }
         }
@@ -133,9 +118,25 @@ class FoldMap private constructor(
         return -1
     }
 
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is FoldMap) return false
+        return totalDocumentLines == other.totalDocumentLines && totalHiddenLines == other.totalHiddenLines && intervals == other.intervals
+    }
+
+    override fun hashCode(): Int {
+        var result = totalDocumentLines
+        result = 31 * result + intervals.hashCode()
+        result = 31 * result + totalHiddenLines
+        return result
+    }
+
     companion object {
         val EMPTY = FoldMap(totalDocumentLines = 1, intervals = emptyList(), totalHiddenLines = 0)
 
+        /**
+         * Creates a [FoldMap] based on total line count, available folding ranges, and collapsed lines.
+         */
         fun of(
             totalLines: Int,
             collapsedRanges: List<IntRange>,
@@ -152,7 +153,6 @@ class FoldMap private constructor(
             for (range in collapsedRanges) {
                 if (range.first in collapsedLines && range.last > range.first) {
                     val start = (range.first + 1).coerceIn(0, totalLines - 1)
-
                     val end = range.last.coerceIn(0, totalLines - 1)
 
                     if (start <= end) {
@@ -165,19 +165,14 @@ class FoldMap private constructor(
                 return FoldMap(totalDocumentLines = totalLines, intervals = emptyList(), totalHiddenLines = 0)
             }
 
-            rawRanges.sortBy { range ->
-                range.first
-            }
+            rawRanges.sortBy { range -> range.first }
 
             val merged = ArrayList<IntRange>()
-
             var currentStart = rawRanges[0].first
-
             var currentEnd = rawRanges[0].last
 
             for (i in 1 until rawRanges.size) {
                 val r = rawRanges[i]
-
                 when {
                     r.first <= currentEnd + 1 && r.last > currentEnd -> {
                         currentEnd = r.last
@@ -185,9 +180,7 @@ class FoldMap private constructor(
 
                     else -> {
                         merged.add(currentStart..currentEnd)
-
                         currentStart = r.first
-
                         currentEnd = r.last
                     }
                 }
@@ -196,12 +189,10 @@ class FoldMap private constructor(
             merged.add(currentStart..currentEnd)
 
             var cumulative = 0
-
             val intervals = ArrayList<Interval>(merged.size)
 
             for (r in merged) {
                 val count = r.last - r.first + 1
-
                 intervals.add(
                     Interval(
                         startLine = r.first,
@@ -211,7 +202,6 @@ class FoldMap private constructor(
                         visualStartThreshold = r.first - cumulative
                     )
                 )
-
                 cumulative += count
             }
 

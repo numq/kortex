@@ -5,6 +5,14 @@ import io.github.numq.krope.text.TextSnapshot
 import kotlin.math.ceil
 import kotlin.math.floor
 
+/**
+ * Represents the current visual window of visible lines rendered on screen.
+ *
+ * @property width Visible viewport width in pixels.
+ * @property height Visible viewport height in pixels.
+ * @property visibleLines Range of document lines currently visible.
+ * @property viewportLines Render metrics and text for each visible line.
+ */
 data class Viewport(
     val width: Float,
     val height: Float,

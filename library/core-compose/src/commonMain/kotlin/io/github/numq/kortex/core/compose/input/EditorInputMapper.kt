@@ -10,19 +10,16 @@ import io.github.numq.kortex.core.caret.CaretAction
 internal object EditorInputMapper {
     fun mapToNavigationAction(event: KeyEvent): EditorAction? {
         val isShift = event.isShiftPressed
-
         val isCtrl = event.isPrimaryModifierPressed
 
         return when (event.key) {
             Key.DirectionLeft -> when {
                 isCtrl -> CaretAction.MoveWordLeft(withSelection = isShift)
-
                 else -> CaretAction.MoveLeft(withSelection = isShift)
             }
 
             Key.DirectionRight -> when {
                 isCtrl -> CaretAction.MoveWordRight(withSelection = isShift)
-
                 else -> CaretAction.MoveRight(withSelection = isShift)
             }
 
@@ -32,19 +29,17 @@ internal object EditorInputMapper {
 
             Key.MoveHome -> when {
                 isCtrl -> CaretAction.MoveDocStart(withSelection = isShift)
-
                 else -> CaretAction.MoveLineStart(withSelection = isShift)
             }
 
             Key.MoveEnd -> when {
                 isCtrl -> CaretAction.MoveDocEnd(withSelection = isShift)
-
                 else -> CaretAction.MoveLineEnd(withSelection = isShift)
             }
 
-            Key.PageUp -> CaretAction.MoveDocStart(withSelection = isShift)
+            Key.PageUp -> CaretAction.MovePageUp(withSelection = isShift)
 
-            Key.PageDown -> CaretAction.MoveDocEnd(withSelection = isShift)
+            Key.PageDown -> CaretAction.MovePageDown(withSelection = isShift)
 
             else -> null
         }

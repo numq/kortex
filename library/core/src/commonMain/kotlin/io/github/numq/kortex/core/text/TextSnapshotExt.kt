@@ -4,12 +4,14 @@ import io.github.numq.krope.text.TextLineEnding
 import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextSnapshot
 
+/** Returns the newline delimiter length in characters (1 for LF, 2 for CRLF). */
 fun TextSnapshot.getDelimiterLength(): Int = when (lineEnding) {
     TextLineEnding.CRLF -> 2
 
     else -> 1
 }
 
+/** Calculates the 0-based character offset for the given [position]. */
 fun TextSnapshot.offsetOf(position: TextPosition): Int {
     val delimiter = getDelimiterLength()
 
@@ -24,6 +26,7 @@ fun TextSnapshot.offsetOf(position: TextPosition): Int {
     return offset + position.column.coerceIn(0, getLineLength(targetLine))
 }
 
+/** Converts a 0-based character [offset] to a 2D [TextPosition] (line and column). */
 fun TextSnapshot.positionOf(offset: Int): TextPosition {
     val delimiter = getDelimiterLength()
 

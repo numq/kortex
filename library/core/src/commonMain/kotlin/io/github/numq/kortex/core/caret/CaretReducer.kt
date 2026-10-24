@@ -8,8 +8,23 @@ import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextSnapshot
 
 internal object CaretReducer {
+    private fun prevStep(text: String, column: Int): Int = when {
+        column <= 0 -> 0
+        column >= 2 && text[column - 1].isLowSurrogate() && text[column - 2].isHighSurrogate() -> 2
+        else -> 1
+    }
+
+    private fun nextStep(text: String, column: Int): Int = when {
+        column >= text.length -> 0
+        column + 1 < text.length && text[column].isHighSurrogate() && text[column + 1].isLowSurrogate() -> 2
+        else -> 1
+    }
+
     private fun moveSelectionLeft(
-        selection: Selection, snapshot: TextSnapshot, foldMap: FoldMap, withSelection: Boolean
+        selection: Selection,
+        snapshot: TextSnapshot,
+        foldMap: FoldMap,
+        withSelection: Boolean,
     ): Selection {
         if (!withSelection && selection.isNotEmpty) {
             return Selection.cursor(selection.range.start)
@@ -20,23 +35,15 @@ internal object CaretReducer {
         val next = when {
             current.column > 0 -> {
                 val lineText = snapshot.getLineText(current.line)
-
-                val step = when {
-                    current.column >= 2 && lineText[current.column - 1].isLowSurrogate() && lineText[current.column - 2].isHighSurrogate() -> 2
-
-                    else -> 1
-                }
-
+                val step = prevStep(lineText, current.column)
                 current.copy(column = current.column - step)
             }
 
             current.line > 0 -> {
                 val currentVisual = foldMap.documentToVisualLine(current.line)
-
                 when {
                     currentVisual > 0 -> {
                         val prevDocLine = foldMap.visualToDocumentLine(currentVisual - 1)
-
                         TextPosition(line = prevDocLine, column = snapshot.getLineLength(prevDocLine))
                     }
 
@@ -51,36 +58,30 @@ internal object CaretReducer {
     }
 
     private fun moveSelectionRight(
-        selection: Selection, snapshot: TextSnapshot, foldMap: FoldMap, withSelection: Boolean
+        selection: Selection,
+        snapshot: TextSnapshot,
+        foldMap: FoldMap,
+        withSelection: Boolean,
     ): Selection {
         if (!withSelection && selection.isNotEmpty) {
             return Selection.cursor(selection.range.end)
         }
 
         val current = selection.caret
-
         val currentLineLength = snapshot.getLineLength(current.line)
 
         val next = when {
             current.column < currentLineLength -> {
                 val lineText = snapshot.getLineText(current.line)
-
-                val step = when {
-                    current.column + 1 < currentLineLength && lineText[current.column].isHighSurrogate() && lineText[current.column + 1].isLowSurrogate() -> 2
-
-                    else -> 1
-                }
-
+                val step = nextStep(lineText, current.column)
                 current.copy(column = current.column + step)
             }
 
             current.line < snapshot.lines - 1 -> {
                 val currentVisual = foldMap.documentToVisualLine(current.line)
-
                 when {
                     currentVisual < foldMap.totalVisualLines - 1 -> {
                         val nextDocLine = foldMap.visualToDocumentLine(currentVisual + 1)
-
                         TextPosition(line = nextDocLine, column = 0)
                     }
 
@@ -94,33 +95,20 @@ internal object CaretReducer {
         return selection.withCaret(newCaret = next, keepAnchor = withSelection, stickyCol = next.column)
     }
 
-    private fun moveSelectionUp(
-        selection: Selection, snapshot: TextSnapshot, foldMap: FoldMap, withSelection: Boolean
+    private fun moveSelectionVertical(
+        selection: Selection,
+        snapshot: TextSnapshot,
+        foldMap: FoldMap,
+        visualDelta: Int,
+        withSelection: Boolean,
     ): Selection {
         val currentVisual = foldMap.documentToVisualLine(selection.caret.line)
+        val targetVisual = (currentVisual + visualDelta).coerceIn(0, (foldMap.totalVisualLines - 1).coerceAtLeast(0))
 
-        if (currentVisual <= 0) return selection
+        if (targetVisual == currentVisual) return selection
 
-        val targetLine = foldMap.visualToDocumentLine(currentVisual - 1)
-
+        val targetLine = foldMap.visualToDocumentLine(targetVisual)
         val targetColumn = selection.stickyColumn.coerceAtMost(snapshot.getLineLength(targetLine))
-
-        val next = TextPosition(targetLine, targetColumn)
-
-        return selection.withCaret(newCaret = next, keepAnchor = withSelection, stickyCol = selection.stickyColumn)
-    }
-
-    private fun moveSelectionDown(
-        selection: Selection, snapshot: TextSnapshot, foldMap: FoldMap, withSelection: Boolean
-    ): Selection {
-        val currentVisual = foldMap.documentToVisualLine(selection.caret.line)
-
-        if (currentVisual >= foldMap.totalVisualLines - 1) return selection
-
-        val targetLine = foldMap.visualToDocumentLine(currentVisual + 1)
-
-        val targetColumn = selection.stickyColumn.coerceAtMost(snapshot.getLineLength(targetLine))
-
         val next = TextPosition(targetLine, targetColumn)
 
         return selection.withCaret(newCaret = next, keepAnchor = withSelection, stickyCol = selection.stickyColumn)
@@ -128,7 +116,6 @@ internal object CaretReducer {
 
     private fun moveSelectionWordLeft(selection: Selection, snapshot: TextSnapshot, withSelection: Boolean): Selection {
         val current = selection.caret
-
         var next = current
 
         if (next.column == 0) {
@@ -142,63 +129,73 @@ internal object CaretReducer {
         }
 
         val lineText = snapshot.getLineText(next.line).take(next.column)
-
-        var column = next.column - 1
-
-        while (column > 0 && lineText[column].isWhitespace()) column--
-
-        when {
-            column >= 0 && lineText[column].isLetterOrDigit() -> while (column > 0 && lineText[column - 1].isLetterOrDigit()) column--
-
-            column > 0 -> column--
+        if (lineText.isEmpty()) {
+            return selection.withCaret(newCaret = next, keepAnchor = withSelection, stickyCol = next.column)
         }
 
-        val target = TextPosition(next.line, column)
+        var column = next.column - prevStep(lineText, next.column)
 
+        while (column > 0 && lineText[column].isWhitespace()) {
+            column -= prevStep(lineText, column)
+        }
+
+        if (column >= 0 && lineText[column].isLetterOrDigit()) {
+            while (column > 0) {
+                val step = prevStep(lineText, column)
+                if (step > 0 && lineText[column - step].isLetterOrDigit()) {
+                    column -= step
+                } else {
+                    break
+                }
+            }
+        }
+
+        val target = TextPosition(next.line, column.coerceAtLeast(0))
         return selection.withCaret(newCaret = target, keepAnchor = withSelection, stickyCol = target.column)
     }
 
     private fun moveSelectionWordRight(
-        selection: Selection, snapshot: TextSnapshot, withSelection: Boolean
+        selection: Selection,
+        snapshot: TextSnapshot,
+        withSelection: Boolean,
     ): Selection {
         val current = selection.caret
-
         val lineLen = snapshot.getLineLength(current.line)
-
         var next = current
 
         if (next.column >= lineLen) {
             when {
                 next.line < snapshot.lines - 1 -> next = TextPosition(next.line + 1, 0)
-
                 else -> return selection
             }
         }
 
         val lineText = snapshot.getLineText(next.line)
-
         var column = next.column
-
         val max = lineText.length
 
-        if (max > 0) {
+        if (max > 0 && column < max) {
             when {
-                lineText[column].isLetterOrDigit() -> while (column < max && lineText[column].isLetterOrDigit()) column++
+                lineText[column].isLetterOrDigit() -> while (column < max && lineText[column].isLetterOrDigit()) {
+                    column += nextStep(lineText, column)
+                }
 
                 lineText[column].isWhitespace() -> {
-                    while (column < max && lineText[column].isWhitespace()) column++
-
+                    while (column < max && lineText[column].isWhitespace()) {
+                        column += nextStep(lineText, column)
+                    }
                     if (column < max && lineText[column].isLetterOrDigit()) {
-                        while (column < max && lineText[column].isLetterOrDigit()) column++
+                        while (column < max && lineText[column].isLetterOrDigit()) {
+                            column += nextStep(lineText, column)
+                        }
                     }
                 }
 
-                else -> column++
+                else -> column += nextStep(lineText, column)
             }
         }
 
         val target = TextPosition(next.line, column)
-
         return selection.withCaret(newCaret = target, keepAnchor = withSelection, stickyCol = target.column)
     }
 
@@ -210,27 +207,22 @@ internal object CaretReducer {
         }.let { index ->
             when (index) {
                 -1 -> lineText.length
-
                 else -> index
             }
         }
 
         val targetCol = when (selection.caret.column) {
             firstNonWhitespace -> 0
-
             else -> firstNonWhitespace
         }
 
         val target = TextPosition(selection.caret.line, targetCol)
-
         return selection.withCaret(newCaret = target, keepAnchor = withSelection, stickyCol = targetCol)
     }
 
     private fun moveSelectionLineEnd(selection: Selection, snapshot: TextSnapshot, withSelection: Boolean): Selection {
         val maxColumn = snapshot.getLineLength(selection.caret.line)
-
         val target = TextPosition(selection.caret.line, maxColumn)
-
         return selection.withCaret(newCaret = target, keepAnchor = withSelection, stickyCol = maxColumn)
     }
 
@@ -238,14 +230,12 @@ internal object CaretReducer {
         val newSelections = state.selections.map { selection ->
             transform(selection.coerceIn(state.snapshot))
         }
-
         return EditorResult(state.copy(selections = Selection.normalize(newSelections)))
     }
 
     fun reduce(state: EditorState, action: CaretAction) = when (action) {
         is CaretAction.Move -> {
             val valid = action.position.coerceIn(state.snapshot)
-
             val newSelections = when {
                 action.withSelection -> state.selections.map { selection ->
                     selection.withCaret(valid, keepAnchor = true)
@@ -253,13 +243,11 @@ internal object CaretReducer {
 
                 else -> listOf(Selection.cursor(valid))
             }
-
             EditorResult(state.copy(selections = Selection.normalize(newSelections)))
         }
 
         is CaretAction.AddCursor -> {
             val valid = action.position.coerceIn(state.snapshot)
-
             EditorResult(state.copy(selections = Selection.normalize(state.selections + Selection.cursor(valid))))
         }
 
@@ -272,11 +260,31 @@ internal object CaretReducer {
         }
 
         is CaretAction.MoveUp -> transformAll(state) { selection ->
-            moveSelectionUp(selection, state.snapshot, state.foldMap, action.withSelection)
+            moveSelectionVertical(selection, state.snapshot, state.foldMap, -1, action.withSelection)
         }
 
         is CaretAction.MoveDown -> transformAll(state) { selection ->
-            moveSelectionDown(selection, state.snapshot, state.foldMap, action.withSelection)
+            moveSelectionVertical(selection, state.snapshot, state.foldMap, 1, action.withSelection)
+        }
+
+        is CaretAction.MovePageUp -> transformAll(state) { selection ->
+            moveSelectionVertical(
+                selection,
+                state.snapshot,
+                state.foldMap,
+                -action.lines.coerceAtLeast(1),
+                action.withSelection,
+            )
+        }
+
+        is CaretAction.MovePageDown -> transformAll(state) { selection ->
+            moveSelectionVertical(
+                selection,
+                state.snapshot,
+                state.foldMap,
+                action.lines.coerceAtLeast(1),
+                action.withSelection,
+            )
         }
 
         is CaretAction.MoveWordLeft -> transformAll(state) { selection ->
@@ -297,7 +305,6 @@ internal object CaretReducer {
 
         is CaretAction.MoveDocStart -> {
             val target = TextPosition.ZERO
-
             val newSelections = when {
                 action.withSelection -> state.selections.map { selection ->
                     selection.withCaret(target, keepAnchor = true)
@@ -305,13 +312,11 @@ internal object CaretReducer {
 
                 else -> listOf(Selection.cursor(target))
             }
-
             EditorResult(state.copy(selections = Selection.normalize(newSelections)))
         }
 
         is CaretAction.MoveDocEnd -> {
             val target = state.snapshot.lastPosition
-
             val newSelections = when {
                 action.withSelection -> state.selections.map { selection ->
                     selection.withCaret(target, keepAnchor = true)
@@ -319,7 +324,6 @@ internal object CaretReducer {
 
                 else -> listOf(Selection.cursor(target))
             }
-
             EditorResult(state.copy(selections = Selection.normalize(newSelections)))
         }
     }

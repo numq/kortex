@@ -1,5 +1,6 @@
 package io.github.numq.kortex.core.compose
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
@@ -10,6 +11,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import io.github.numq.kortex.core.EditorEngine
 import io.github.numq.kortex.core.EditorState
+import io.github.numq.kortex.core.caret.CaretAction
 import io.github.numq.kortex.core.compose.canvas.EditorCanvas
 import io.github.numq.kortex.core.compose.dimensions.EditorDimensions
 import io.github.numq.kortex.core.compose.font.EditorFont
@@ -33,6 +35,28 @@ import io.github.numq.krope.text.TextOperation
 import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextRange
 
+/**
+ * Hardware-accelerated Compose Multiplatform text editor component rendered via Skia Canvas.
+ *
+ * Handles viewport virtualization, multi-cursor rendering, IME text input, pointer gestures,
+ * auto-scrolling, and keyboard shortcuts.
+ *
+ * @param engine The [EditorEngine] driving the document state and history.
+ * @param font The [EditorFont] used for text measurement and Skia paragraph rendering.
+ * @param theme Visual color theme for the editor surface, gutter, selection, and carets.
+ * @param modifier The [Modifier] to be applied to the root editor container.
+ * @param showGutter Whether to render the line number gutter on the left side.
+ * @param readOnly Whether text editing mutations and cut/paste actions are disabled.
+ * @param dimensions Layout padding and sizing metrics for the editor and gutter.
+ * @param scrollController Controller managing horizontal and vertical viewport scroll offsets.
+ * @param bottomInset Additional bottom inset (in pixels) to account for overlaid panels.
+ * @param keymap Keyboard shortcut bindings active within the editor.
+ * @param layerFactory Factory responsible for creating cached Skia rendering layers.
+ * @param onGutterClick Optional callback invoked when a line in the gutter is clicked; return `true` if consumed.
+ * @param canvas Slot for rendering the underlying editor canvas.
+ * @param overlay Composable slot rendered above the canvas (e.g., for popups or search bars).
+ * @param menu Composable slot for the right-click / long-press context menu, or `null` to disable.
+ */
 @Composable
 fun KortexEditor(
     engine: EditorEngine,
@@ -43,6 +67,7 @@ fun KortexEditor(
     readOnly: Boolean = false,
     dimensions: EditorDimensions = remember { EditorDimensions() },
     scrollController: EditorScrollController = rememberEditorScrollController(),
+    bottomInset: Float = 0f,
     keymap: EditorKeymap = remember { DefaultEditorKeymap.create() },
     layerFactory: LayerFactory = rememberLayerFactory(dimensions = dimensions),
     onGutterClick: ((line: Int, offset: Offset) -> Boolean)? = null,
@@ -65,44 +90,30 @@ fun KortexEditor(
     },
 ) {
     val state by engine.state.collectAsState()
-
     val clipboardManager = LocalClipboardManager.current
 
     val focusRequester = remember { FocusRequester() }
-
     var isFocused by remember { mutableStateOf(false) }
-
     var menuData by remember { mutableStateOf<EditorMenuData?>(null) }
+
+    LaunchedEffect(scrollController.horizontalOffset, scrollController.verticalOffset) {
+        if (menuData != null) {
+            menuData = null
+        }
+    }
 
     val gutterWidth by remember(showGutter, state.snapshot.lines, font.lineHeight, dimensions) {
         derivedStateOf {
             if (!showGutter) return@derivedStateOf 0f
 
             val maxTextWidth = font.measureTextWidth("${state.snapshot.lines + 1}")
-
             dimensions.gutterPaddingStart + maxTextWidth + dimensions.gutterGap + font.lineHeight + dimensions.gutterPaddingEnd
         }
     }
 
-    val textContentWidth by remember(state.snapshot, font.charWidth, state.config.tabSize, dimensions) {
+    val textContentWidth by remember(state.snapshot.maxLineLength, font.charWidth, dimensions) {
         derivedStateOf {
-            val maxVisualCols = (0 until state.snapshot.lines).maxOfOrNull { lineIdx ->
-                val text = state.snapshot.getLineText(lineIdx)
-
-                var cols = 0
-
-                for (char in text) {
-                    cols += when (char) {
-                        '\t' -> state.config.tabSize - (cols % state.config.tabSize)
-
-                        else -> 1
-                    }
-                }
-
-                cols
-            } ?: state.snapshot.maxLineLength
-
-            dimensions.editorPaddingStart + (maxVisualCols * font.charWidth) + dimensions.editorPaddingEnd
+            dimensions.editorPaddingStart + (state.snapshot.maxLineLength * font.charWidth) + dimensions.editorPaddingEnd
         }
     }
 
@@ -110,13 +121,13 @@ fun KortexEditor(
         derivedStateOf { gutterWidth + textContentWidth }
     }
 
-    val contentHeight by remember(state.foldMap.totalVisualLines, font.lineHeight, dimensions) {
+    val contentHeight by remember(state.foldMap.totalVisualLines, font.lineHeight, dimensions, bottomInset) {
         derivedStateOf {
-            state.foldMap.totalVisualLines * font.lineHeight + dimensions.contentPaddingBottom
+            (state.foldMap.totalVisualLines * font.lineHeight) + dimensions.contentPaddingBottom + bottomInset
         }
     }
 
-    LaunchedEffect(state.primarySelection.caret, font, state.foldMap, dimensions, gutterWidth) {
+    LaunchedEffect(state.primarySelection.caret, font, state.foldMap, dimensions, gutterWidth, bottomInset) {
         val visualLine = state.foldMap.documentToVisualLine(state.primarySelection.caret.line)
 
         scrollController.scrollToCaret(
@@ -125,6 +136,7 @@ fun KortexEditor(
             lineHeight = font.lineHeight,
             gutterWidth = gutterWidth,
             editorPaddingStart = dimensions.editorPaddingStart,
+            bottomInset = bottomInset,
         )
     }
 
@@ -136,22 +148,17 @@ fun KortexEditor(
                 val text = activeSelections.joinToString("\n") { selection ->
                     state.snapshot.getTextInRange(selection.range)
                 }
-
                 clipboardManager.setText(AnnotatedString(text))
             }
 
             else -> {
-                val linesToCopy = state.selections.map { selection ->
-                    selection.caret.line
-                }.distinct().sorted()
+                val linesToCopy = state.selections.map { it.caret.line }.distinct().sorted()
 
                 if (linesToCopy.isNotEmpty()) {
                     val delimiter = state.config.lineSeparator
-
                     val text = linesToCopy.joinToString(delimiter) { line ->
                         state.snapshot.getLineText(line)
                     } + delimiter
-
                     clipboardManager.setText(AnnotatedString(text))
                 }
             }
@@ -166,26 +173,20 @@ fun KortexEditor(
         when {
             activeSelections.isNotEmpty() -> {
                 handleCopy()
-
                 engine.dispatch(EditAction.Backspace)
             }
 
             else -> {
                 handleCopy()
-
-                val linesToCut = state.selections.map { selection ->
-                    selection.caret.line
-                }.distinct().sortedDescending()
+                val linesToCut = state.selections.map { it.caret.line }.distinct().sortedDescending()
 
                 val operations = linesToCut.map { line ->
                     val lineLength = state.snapshot.getLineLength(line)
-
                     val isLastLine = line == state.snapshot.lines - 1
 
                     when {
                         isLastLine && line > 0 -> {
                             val prevLineLen = state.snapshot.getLineLength(line - 1)
-
                             TextOperation.Data.Single.Delete(
                                 range = TextRange(
                                     start = TextPosition(line - 1, prevLineLen), end = TextPosition(line, lineLength)
@@ -210,10 +211,8 @@ fun KortexEditor(
                 if (operations.isNotEmpty()) {
                     val batch = when (operations.size) {
                         1 -> operations[0]
-
                         else -> TextOperation.Data.Batch(operations)
                     }
-
                     engine.applyOperation(batch, canMerge = false)
                 }
             }
@@ -224,20 +223,17 @@ fun KortexEditor(
         if (readOnly) return
 
         val textToPaste = clipboardManager.getText()?.text ?: return
-
         engine.dispatch(EditAction.Paste(textToPaste))
     }
 
-    BoxWithConstraints(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier.background(theme.background)) {
         val viewportWidth = when {
             constraints.hasBoundedWidth -> constraints.maxWidth.toFloat()
-
             else -> contentWidth
         }
 
         val viewportHeight = when {
             constraints.hasBoundedHeight -> constraints.maxHeight.toFloat()
-
             else -> contentHeight
         }
 
@@ -285,12 +281,22 @@ fun KortexEditor(
             focusRequester = focusRequester,
             onFocusChanged = { isFocused = it },
             onContextMenu = { clickOffset, textPos ->
+                val currentSelection = engine.state.value.primarySelection
+                val isInsideSelection = currentSelection.isNotEmpty && currentSelection.range.contains(textPos)
+                if (!isInsideSelection) {
+                    engine.dispatch(CaretAction.Move(textPos, withSelection = false))
+                }
+
+                val activeRange = if (isInsideSelection) currentSelection.range else TextRange(textPos, textPos)
+                val activeText =
+                    if (isInsideSelection) engine.state.value.snapshot.getTextInRange(currentSelection.range) else ""
+
                 menuData = EditorMenuData(
                     x = clickOffset.x,
                     y = clickOffset.y,
                     position = textPos,
-                    selectedRange = state.selection.range,
-                    selectedText = state.snapshot.getTextInRange(state.selection.range),
+                    selectedRange = activeRange,
+                    selectedText = activeText,
                     isReadOnly = readOnly,
                     canUndo = engine.history.canUndo,
                     canRedo = engine.history.canRedo,
@@ -303,6 +309,7 @@ fun KortexEditor(
                     dismiss = { menuData = null },
                 )
             },
+            onDismissContextMenu = { menuData = null },
             handleCopy = ::handleCopy,
             handleCut = ::handleCut,
             handlePaste = ::handlePaste,
@@ -310,9 +317,7 @@ fun KortexEditor(
             onGutterClick = onGutterClick,
         ) {
             canvas(state, viewport, isFocused, gutterWidth)
-
             overlay()
-
             menuData?.let { data -> menu?.invoke(data) }
         }
     }

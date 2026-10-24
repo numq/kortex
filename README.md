@@ -80,7 +80,8 @@ typing, this architecture inevitably suffers from GC pauses, frame drops, and la
     - Background diagnostics engine (300ms debounce) with sine-wave / zigzag squiggle rendering for Errors, Warnings,
       Information, and Hints.
     - Floating auto-completion popup with keyboard navigation (`Up`/`Down`, `Enter`/`Tab`, `Escape`).
-    - Hover documentation popups via `DocumentationProvider` (debounced, resolved against the caret offset).
+    - Hover documentation resolution via `DocumentationProvider` (debounced at 250ms, resolved against the caret
+      offset).
     - Active caret symbol occurrence highlighting.
 - 📂 **Logarithmic Code Folding (`FoldMap`)**: Cumulative line interval trees delivering $O (\log K)$ binary search
   conversions between document lines and visual lines.
@@ -149,7 +150,7 @@ in `rememberLayerFactory` / `rememberCodeLayerFactory`).
 |------------------------|------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `:kortex-core`         | `io.github.numq.kortex:core:<version>`         | Headless editor primitives: `EditorEngine`, `EditorState`, `Caret`, `Selection`, `FoldMap`, `HistoryManager`, and functional reducers. Zero Compose dependencies. |
 | `:kortex-core-compose` | `io.github.numq.kortex:core-compose:<version>` | Skia canvas rendering integration (`SkiaCanvas`), `EditorFont`, `FontManager`, `EditorScrollController`, `EditorInputArea`, keymaps, and default context menus.   |
-| `:kortex-code`         | `io.github.numq.kortex:code:<version>`         | Code abstractions: `CodeEditorEngine`, `LanguageAnalysisService`, tokenization models, diagnostics, occurrence tracking, and completion.                          |
+| `:kortex-code`         | `io.github.numq.kortex:code:<version>`         | Code abstractions: `CodeEditorEngine`, `LanguageAnalysisService`, tokenization models, diagnostics, occurrence tracking, documentation, and completion.           |
 | `:kortex-code-compose` | `io.github.numq.kortex:code-compose:<version>` | High-level `KortexCodeEditor` composable, syntax highlighting layers, folding markers, column ruler, and code completion overlays.                                |
 
 ---
@@ -182,16 +183,16 @@ Add dependencies to your `build.gradle.kts` in your multiplatform `commonMain` o
 ```kotlin
 dependencies {
     // Core text manipulation engine (Headless)
-    implementation("io.github.numq.kortex:core:1.0.0")
+    implementation("io.github.numq.kortex:core:1.1.0")
 
     // Compose Multiplatform basic Skia text editor
-    implementation("io.github.numq.kortex:core-compose:1.0.0")
+    implementation("io.github.numq.kortex:core-compose:1.1.0")
 
     // Code editor engine & language analysis abstractions
-    implementation("io.github.numq.kortex:code:1.0.0")
+    implementation("io.github.numq.kortex:code:1.1.0")
 
     // Complete Compose Multiplatform IDE code editor (Includes syntax, folding, completions)
-    implementation("io.github.numq.kortex:code-compose:1.0.0")
+    implementation("io.github.numq.kortex:code-compose:1.1.0")
 
     // Krope buffer dependency (Required for buffer initialization)
     implementation("io.github.numq.krope:text:1.1.1")
@@ -246,8 +247,15 @@ fun SimpleEditor() {
         EditorFont(typeface = typeface, size = 14f, lineSpacing = 1.2f)
     }
 
-    val theme = remember {
-        EditorTheme.fromColorScheme(androidx.compose.material3.MaterialTheme.colorScheme)
+    DisposableEffect(font) {
+        onDispose {
+            font.close()
+        }
+    }
+
+    val colorScheme = androidx.compose.material3.MaterialTheme.colorScheme
+    val theme = remember(colorScheme) {
+        EditorTheme.fromColorScheme(colorScheme)
     }
 
     KortexEditor(engine = engine, font = font, theme = theme, modifier = Modifier.fillMaxSize())
@@ -328,6 +336,12 @@ fun FullCodeEditorScreen() {
         EditorFont(typeface = typeface, size = 14f, lineSpacing = 1.25f)
     }
 
+    DisposableEffect(font) {
+        onDispose {
+            font.close()
+        }
+    }
+
     val isDark = isSystemInDarkTheme()
     val colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
     val theme = remember(colorScheme, isDark) { CodeEditorTheme.fromColorScheme(colorScheme, isDark) }
@@ -405,7 +419,7 @@ val customLanguageService = object : LanguageAnalysisService {
 }
 ```
 
-> Debounce intervals (50ms for tokens, 300ms for diagnostics) are fixed in `CodeEditorEngine`.
+> Debounce intervals (50ms for tokens, 300ms for diagnostics, 250ms for documentation) are managed in`CodeEditorEngine`.
 > Providers run on `Dispatchers.Default` and receive the latest `TextSnapshot` revision only -
 > stale results are dropped via `distinctUntilChangedBy(TextSnapshot::revision)`.
 
@@ -428,14 +442,14 @@ val token = Token(
 
 Built-in token types include:
 
-* `TokenType.KEYWORD`, `TokenType.KEYWORD_CONTROL`
-* `TokenType.TYPE`, `TokenType.TYPE_BUILTIN`
-* `TokenType.FUNCTION`, `TokenType.FUNCTION_METHOD`
-* `TokenType.VARIABLE`, `TokenType.VARIABLE_PARAMETER`
-* `TokenType.STRING`, `TokenType.NUMBER`
-* `TokenType.COMMENT`, `TokenType.COMMENT_LINE`, `TokenType.COMMENT_BLOCK`
-* `TokenType.OPERATOR`, `TokenType.PUNCTUATION`, `TokenType.PUNCTUATION_BRACKET`, `TokenType.PUNCTUATION_DELIMITER`
-* `TokenType.MARKUP_LINK`, `TokenType.DEFAULT`
+- `TokenType.KEYWORD`, `TokenType.KEYWORD_CONTROL`
+- `TokenType.TYPE`, `TokenType.TYPE_BUILTIN`
+- `TokenType.FUNCTION`, `TokenType.FUNCTION_METHOD`
+- `TokenType.VARIABLE`, `TokenType.VARIABLE_PARAMETER`
+- `TokenType.STRING`, `TokenType.NUMBER`
+- `TokenType.COMMENT`, `TokenType.COMMENT_LINE`, `TokenType.COMMENT_BLOCK`
+- `TokenType.OPERATOR`, `TokenType.PUNCTUATION`, `TokenType.PUNCTUATION_BRACKET`, `TokenType.PUNCTUATION_DELIMITER`
+- `TokenType.MARKUP_LINK`, `TokenType.DEFAULT`
 
 #### Code Diagnostics & Squiggle Rendering (`DiagnosticsProvider`)
 
@@ -474,9 +488,9 @@ it **inserts** `text` at the caret anchor. This is handled by `CodeEditorAction.
 
 Popup controls when visible:
 
-* `DirectionDown` / `DirectionUp`: Navigate items.
-* `Enter` / `Tab`: Apply selected completion.
-* `Escape`: Dismiss overlay.
+- `DirectionDown` / `DirectionUp`: Navigate items.
+- `Enter` / `Tab`: Apply selected completion.
+- `Escape`: Dismiss overlay.
 
 #### Documentation Popups (`DocumentationProvider`)
 
@@ -589,9 +603,9 @@ val visualLineIndex = foldMap.documentToVisualLine(actualDocumentLine)
 val documentLineIndex = foldMap.visualToDocumentLine(visualLineIndex)
 ```
 
-* **Binary Search Tree Intervals**: `FoldMap` manages collapsed regions using interval trees with $O (\log K)$ mapping.
-* **Render Culling**: Collapsed lines are completely bypassed during Skia layout passes.
-* **Interactive Gutters**: `KortexCodeEditor` wires gutter clicks to `ViewportAction.ToggleFolding(line)` when a
+- **Binary Search Tree Intervals**: `FoldMap` manages collapsed regions using interval trees with $O (\log K)$ mapping.
+- **Render Culling**: Collapsed lines are completely bypassed during Skia layout passes.
+- **Interactive Gutters**: `KortexCodeEditor` wires gutter clicks to `ViewportAction.ToggleFolding(line)` when a
   `FoldingRegion` starts on that line. `KortexEditor` (plain text) exposes a generic `onGutterClick(line, offset)`
   callback instead — you decide what a gutter click means.
 
@@ -630,10 +644,10 @@ editorEngine.dispatch(SelectionAction.SelectNextMatch)
 - Duplicate matches are coalesced automatically, so repeatedly pressing `Ctrl+D` advances to the next distinct
   occurrence.
 
-* **Selection Normalization**: Overlapping carets and ranges are automatically merged into clean, non-intersecting
+- **Selection Normalization**: Overlapping carets and ranges are automatically merged into clean, non-intersecting
   intervals via `Selection.normalize()`.
-* **Direction Awareness**: Preserves anchor and caret orientations (`FORWARD` / `BACKWARD`).
-* **Sticky Column Navigation**: Preserves original column offsets when navigating vertically across uneven lines.
+- **Direction Awareness**: Preserves anchor and caret orientations (`FORWARD` / `BACKWARD`).
+- **Sticky Column Navigation**: Preserves original column offsets when navigating vertically across uneven lines.
 
 ---
 
@@ -641,8 +655,8 @@ editorEngine.dispatch(SelectionAction.SelectNextMatch)
 
 Kortex provides adapters for Compose Desktop scrollbars:
 
-* `EditorScrollController.asVerticalScrollbarAdapter()` / `rememberVerticalScrollbarAdapter(...)`
-* `EditorScrollController.asHorizontalScrollbarAdapter()` / `rememberHorizontalScrollbarAdapter(...)`
+- `EditorScrollController.asVerticalScrollbarAdapter()` / `rememberVerticalScrollbarAdapter(...)`
+- `EditorScrollController.asHorizontalScrollbarAdapter()` / `rememberHorizontalScrollbarAdapter(...)`
 
 A built-in Material 3 right-click context menu handles Cut, Copy, Paste, Undo, Redo, and Select All out of the box.
 
@@ -658,7 +672,7 @@ A built-in Material 3 right-click context menu handles Cut, Copy, Paste, Undo, R
 | `CodeEditorEngine`       | Extends `EditorEngine` with asynchronous debounced language analysis pipelines.                         |
 | `EditorConfig`           | Immutable editor preferences: `tabSize`, `useSoftTabs`, `lineSeparator` (derived `tabString`).          |
 | `EditorState`            | Immutable snapshot of text snapshot, selections, collapsed ranges, and config.                          |
-| `CodeEditorState`        | Extends `EditorState` with syntax tokens, lint diagnostics, and completion state.                       |
+| `CodeEditorState`        | Extends `EditorState` with syntax tokens, lint diagnostics, documentation, and completion state.        |
 | `EditorFont`             | Thread-safe Skia typeface wrapper managing font collections, ascents, descents, and paragraph builders. |
 | `EditorScrollController` | Stable controller handling viewport offsets, bounds, and auto-scrolling to carets.                      |
 | `FoldMap`                | High-performance coordinate mapper between logical lines and visible lines.                             |
@@ -672,17 +686,18 @@ property resolves the currently highlighted suggestion.
 
 ### Reducer Actions
 
-* **`EditAction`**:
+- **`EditAction`**:
   `Insert`, `Paste`, `Enter`, `Tab`, `Untab`, `Backspace`, `Delete`, `WordDeleteLeft`, `WordDeleteRight`, `MoveLineUp`,
   `MoveLineDown`, `Duplicate`, `JoinLines`
-* **`CaretAction`**: `Move`, `AddCursor`, `MoveLeft`, `MoveRight`, `MoveUp`, `MoveDown`, `MoveWordLeft`,`MoveWordRight`,
+- **`CaretAction`**: `Move`, `AddCursor`, `MoveLeft`, `MoveRight`, `MoveUp`, `MoveDown`, `MoveWordLeft`,`MoveWordRight`,
   `MoveLineStart`, `MoveLineEnd`, `MoveDocStart`, `MoveDocEnd`.
-* **`SelectionAction`**: `Clear`, `SelectAll`, `SelectWordAt`, `SelectLine`, `SelectRange`, `AddSelection`,
+- **`SelectionAction`**: `Clear`, `SelectAll`, `SelectWordAt`, `SelectLine`, `SelectRange`, `AddSelection`,
   `SetSelections`, `SelectNextMatch`.
-* **`ViewportAction`**: `ToggleFolding`, `UpdateCollapsedLines`, `UpdateFoldingRegions`.
-* **`HistoryAction`**: `Undo`, `Redo`.
-* **`CodeEditorAction`**: `Core`, `Edit.ToggleComment`, `External.UpdateSyntax`, `External.UpdateAnalysis`,
-  `Completion.Show`, `Completion.Apply`, `Completion.Dismiss`, `Completion.SelectNext`, `Completion.SelectPrevious`.
+- **`ViewportAction`**: `ToggleFolding`, `UpdateCollapsedLines`, `UpdateFoldingRegions`.
+- **`HistoryAction`**: `Undo`, `Redo`.
+- **`CodeEditorAction`**: `Core`, `Edit.ToggleComment`, `External.UpdateSyntax`, `External.UpdateAnalysis`,
+  `External.UpdateDocumentation`, `Completion.Show`, `Completion.Apply`, `Completion.ApplyAt`, `Completion.Dismiss`,
+  `Completion.SelectNext`, `Completion.SelectPrevious`.
 
 > `EditAction` and `CaretAction` mutate the buffer or selection directly. `ViewportAction` only
 > rebuilds `FoldMap` (buffer is untouched). `HistoryAction` is routed as `EditorCommand.Undo/Redo`

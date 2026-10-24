@@ -4,6 +4,9 @@ import io.github.numq.kortex.core.EditorAction
 import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextRange
 
+/**
+ * Actions modifying or creating selection ranges.
+ */
 sealed interface SelectionAction : EditorAction {
     data object Clear : SelectionAction
 

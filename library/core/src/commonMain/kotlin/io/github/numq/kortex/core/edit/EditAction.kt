@@ -2,6 +2,9 @@ package io.github.numq.kortex.core.edit
 
 import io.github.numq.kortex.core.EditorAction
 
+/**
+ * Text editing operations triggered by keyboard input or programmatic commands.
+ */
 sealed interface EditAction : EditorAction {
     data class Insert(val text: String) : EditAction
 

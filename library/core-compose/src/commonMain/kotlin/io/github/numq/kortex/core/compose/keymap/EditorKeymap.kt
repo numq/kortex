@@ -5,6 +5,9 @@ import io.github.numq.kortex.core.compose.key.EditorKeyContext
 import io.github.numq.kortex.core.compose.key.KeyBinding
 import io.github.numq.kortex.core.compose.key.KeyStroke
 
+/**
+ * Immutable collection of key bindings evaluated sequentially against incoming [KeyEvent]s.
+ */
 class EditorKeymap(val bindings: List<KeyBinding>) {
     fun handle(event: KeyEvent, context: EditorKeyContext): Boolean {
         for (binding in bindings) {

@@ -6,8 +6,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import io.github.numq.kortex.core.EditorState
 import io.github.numq.kortex.core.compose.font.EditorFont
+import io.github.numq.kortex.core.compose.layer.Layer
 import io.github.numq.kortex.core.compose.layer.LayerFactory
 import io.github.numq.kortex.core.compose.scroll.EditorScrollController
+import io.github.numq.kortex.core.compose.text.TextContentLayer
 import io.github.numq.kortex.core.compose.theme.EditorTheme
 import io.github.numq.kortex.core.selection.Selection
 import io.github.numq.kortex.core.viewport.Viewport
@@ -27,13 +29,22 @@ fun EditorCanvas(
     gutterWidth: Float,
     isFocused: Boolean,
     modifier: Modifier = Modifier,
+    contentLayers: List<TextContentLayer> = remember(
+        viewport.viewportLines, scrollController.horizontalOffset, font, theme
+    ) {
+        layerFactory.createCodeAreaContentLayers(
+            viewport.viewportLines, scrollController.horizontalOffset, font, theme
+        )
+    },
+    extraGutterLayers: List<Layer> = emptyList(),
+    underlayLayers: List<Layer> = emptyList(),
+    overlayLayers: List<Layer> = emptyList(),
 ) {
     var caretVisible by remember { mutableStateOf(true) }
 
     LaunchedEffect(state.selections, isFocused) {
         if (!isFocused) {
             caretVisible = false
-
             return@LaunchedEffect
         }
 
@@ -41,35 +52,39 @@ fun EditorCanvas(
 
         while (isActive) {
             delay(530L.milliseconds)
-
             caretVisible = !caretVisible
         }
     }
 
+    val showCarets = isFocused && caretVisible
+
     val backgroundLayer = remember(viewport.width, viewport.height, theme) {
         layerFactory.createBackgroundLayer(viewport.width, viewport.height, theme)
+    }
+
+    val gutterBackgroundLayer = remember(gutterWidth, viewport.height, theme) {
+        layerFactory.createGutterBackgroundLayer(gutterWidth, viewport.height, theme)
     }
 
     val highlightedLineLayer = remember(viewport.viewportLines, state.caret, theme) {
         layerFactory.createHighlightedLineLayer(viewport.viewportLines, state.caret, theme)
     }
 
-    val gutterLineLayers = remember(viewport.viewportLines, gutterWidth, font, theme) {
+    val gutterLineLayers = remember(viewport.viewportLines, gutterWidth, state.caret.position.line, font, theme) {
         viewport.viewportLines.map { viewportLine ->
-            layerFactory.createGutterLineLayer(viewportLine.line, gutterWidth, viewportLine.textBaselineY, font, theme)
+            layerFactory.createGutterLineLayer(
+                line = viewportLine.line,
+                width = gutterWidth,
+                textY = viewportLine.textBaselineY,
+                font = font,
+                theme = theme,
+                isCurrentLine = viewportLine.line == state.caret.position.line,
+            )
         }
     }
 
     val gutterSeparatorLayer = remember(viewport.height, gutterWidth, theme) {
         layerFactory.createGutterSeparatorLayer(gutterWidth, viewport.height, theme)
-    }
-
-    val contentLayers = remember(
-        viewport.viewportLines, scrollController.horizontalOffset, font, theme
-    ) {
-        layerFactory.createCodeAreaContentLayers(
-            viewport.viewportLines, scrollController.horizontalOffset, font, theme
-        )
     }
 
     val selectionLayers = remember(state.selections, scrollController.horizontalOffset, contentLayers, theme) {
@@ -78,7 +93,7 @@ fun EditorCanvas(
                 contentLayers = contentLayers,
                 selection = selection,
                 scrollX = scrollController.horizontalOffset,
-                theme = theme
+                theme = theme,
             )
         }
     }
@@ -89,33 +104,51 @@ fun EditorCanvas(
             selections = state.selections,
             scrollX = scrollController.horizontalOffset,
             font = font,
-            theme = theme
+            theme = theme,
         )
     }
 
     SkiaCanvas(
-        modifier = modifier.fillMaxSize(), onRender = { nativeCanvas, width, height ->
+        modifier = modifier.fillMaxSize(),
+        onRender = { nativeCanvas, width, height ->
+            val canvasW = width.toFloat()
+            val canvasH = height.toFloat()
+
             nativeCanvas.save()
-
-            nativeCanvas.clipRect(Rect.makeWH(width.toFloat(), height.toFloat()))
-
+            nativeCanvas.clipRect(Rect.makeWH(canvasW, canvasH))
             nativeCanvas.clear(theme.background.toArgb())
 
             backgroundLayer.render(nativeCanvas)
 
-            highlightedLineLayer?.render(nativeCanvas)
-
-            gutterLineLayers.forEach { layer ->
-                layer.render(nativeCanvas)
+            if (gutterWidth > 0f) {
+                gutterBackgroundLayer?.render(nativeCanvas)
             }
 
-            gutterSeparatorLayer.render(nativeCanvas)
+            highlightedLineLayer?.render(nativeCanvas)
+
+            if (gutterWidth > 0f) {
+                nativeCanvas.save()
+                nativeCanvas.clipRect(Rect.makeWH(gutterWidth, canvasH))
+
+                gutterLineLayers.forEach { layer ->
+                    layer.render(nativeCanvas)
+                }
+
+                extraGutterLayers.forEach { layer ->
+                    layer.render(nativeCanvas)
+                }
+
+                nativeCanvas.restore()
+                gutterSeparatorLayer.render(nativeCanvas)
+            }
 
             nativeCanvas.save()
-
             nativeCanvas.translate(gutterWidth, 0f)
+            nativeCanvas.clipRect(Rect.makeWH((canvasW - gutterWidth).coerceAtLeast(0f), canvasH))
 
-            nativeCanvas.clipRect(Rect.makeWH(width.toFloat() - gutterWidth, height.toFloat()))
+            underlayLayers.forEach { layer ->
+                layer.render(nativeCanvas)
+            }
 
             selectionLayers.forEach { layer ->
                 layer.render(nativeCanvas)
@@ -125,14 +158,18 @@ fun EditorCanvas(
                 layer.render(nativeCanvas)
             }
 
-            if (caretVisible) {
+            overlayLayers.forEach { layer ->
+                layer.render(nativeCanvas)
+            }
+
+            if (showCarets) {
                 caretLayers.forEach { layer ->
                     layer.render(nativeCanvas)
                 }
             }
 
             nativeCanvas.restore()
-
             nativeCanvas.restore()
-        })
+        },
+    )
 }

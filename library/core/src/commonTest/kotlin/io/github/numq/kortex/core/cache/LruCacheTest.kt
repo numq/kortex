@@ -40,9 +40,9 @@ class LruCacheTest {
 
         val item3 = cache.getOrCreate("key3").getOrThrow()
 
-        assertTrue(item2.isClosed, "item2 должен быть закрыт при вытеснении")
-        assertFalse(item1.isClosed, "item1 должен остаться активным в кэше")
-        assertFalse(item3.isClosed, "item3 должен быть активен")
+        assertTrue(item2.isClosed, "item2 should be closed upon eviction")
+        assertFalse(item1.isClosed, "item1 should remain active in cache")
+        assertFalse(item3.isClosed, "item3 should remain active in cache")
     }
 
     @Test

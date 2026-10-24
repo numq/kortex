@@ -15,6 +15,10 @@ import io.github.numq.kortex.core.compose.layer.LayerFactory
 import io.github.numq.kortex.core.compose.text.TextContentLayer
 import io.github.numq.kortex.core.viewport.ViewportLine
 
+/**
+ * Factory for creating Skia rendering layers specific to code editor features
+ * (folding markers, syntax coloring, occurrence backgrounds, column rulers, diagnostics).
+ */
 interface CodeLayerFactory : LayerFactory {
     fun createFoldingMarkersLayers(
         viewportLines: List<ViewportLine>,

@@ -36,6 +36,7 @@ fun KortexCodeEditor(
     columnRuler: Int? = 80,
     dimensions: EditorDimensions = remember { EditorDimensions() },
     scrollController: EditorScrollController = rememberEditorScrollController(),
+    bottomInset: Float = 0f,
     keymap: EditorKeymap = remember(engine) { DefaultCodeEditorKeymap.create(engine) },
     layerFactory: CodeLayerFactory = rememberCodeLayerFactory(dimensions = dimensions),
     overlay: @Composable () -> Unit = {},
@@ -54,6 +55,7 @@ fun KortexCodeEditor(
         readOnly = readOnly,
         dimensions = dimensions,
         scrollController = scrollController,
+        bottomInset = bottomInset,
         keymap = keymap,
         layerFactory = layerFactory,
         menu = menu,
@@ -62,8 +64,7 @@ fun KortexCodeEditor(
                 region.range.start.line == line
             }) {
                 true -> {
-                    engine.engine.dispatch(ViewportAction.ToggleFolding(line))
-
+                    engine.dispatch(ViewportAction.ToggleFolding(line))
                     true
                 }
 
@@ -92,10 +93,12 @@ fun KortexCodeEditor(
                     completion = visibleCompletion,
                     foldMap = codeState.foldMap,
                     font = font,
+                    dimensions = dimensions,
                     scrollController = scrollController,
-                    onSelect = { engine.dispatch(CodeEditorAction.Completion.Apply) },
+                    onSelect = { index -> engine.dispatch(CodeEditorAction.Completion.ApplyAt(index)) },
                     onDismiss = { engine.dispatch(CodeEditorAction.Completion.Dismiss) },
                 )
             }
-        })
+        },
+    )
 }

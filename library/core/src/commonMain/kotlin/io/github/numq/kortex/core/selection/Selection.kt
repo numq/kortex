@@ -4,6 +4,13 @@ import io.github.numq.krope.text.TextPosition
 import io.github.numq.krope.text.TextRange
 import io.github.numq.krope.text.TextSnapshot
 
+/**
+ * Represents a text selection with an anchor and a moving caret.
+ *
+ * @property anchor Fixed starting position where selection originated.
+ * @property caret Active position that moves with selection changes.
+ * @property stickyColumn Preferred column maintained across vertical line moves.
+ */
 data class Selection(
     val anchor: TextPosition, val caret: TextPosition, val stickyColumn: Int = caret.column
 ) : Comparable<Selection> {
@@ -56,6 +63,7 @@ data class Selection(
 
         val EMPTY = ZERO
 
+        /** Creates a point cursor selection (anchor == caret). */
         fun cursor(position: TextPosition, stickyColumn: Int = position.column) =
             Selection(anchor = position, caret = position, stickyColumn = stickyColumn)
 
@@ -78,6 +86,10 @@ data class Selection(
             return Selection(anchor = anchor, caret = caret, stickyColumn = caret.column)
         }
 
+        /**
+         * Normalizes a list of selections by sorting them and merging any overlapping
+         * or touching ranges and duplicate cursors.
+         */
         fun normalize(selections: List<Selection>): List<Selection> {
             if (selections.size <= 1) return selections.ifEmpty { listOf(ZERO) }
 

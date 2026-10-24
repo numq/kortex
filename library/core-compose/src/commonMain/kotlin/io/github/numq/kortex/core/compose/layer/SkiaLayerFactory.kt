@@ -3,6 +3,7 @@ package io.github.numq.kortex.core.compose.layer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import io.github.numq.kortex.core.caret.Caret
 import io.github.numq.kortex.core.compose.background.BackgroundLayer
@@ -30,10 +31,24 @@ class SkiaLayerFactory(
     private val dimensions: EditorDimensions,
 ) : CloseableResource(), LayerFactory {
     override fun createBackgroundLayer(width: Float, height: Float, theme: EditorTheme) = BackgroundLayer(
-        width = width, height = height, paint = paintCache.getOrCreate(
+        width = width,
+        height = height,
+        paint = paintCache.getOrCreate(
             PaintCache.Key(color = theme.background.toArgb())
-        ).getOrThrow()
+        ).getOrThrow(),
     )
+
+    override fun createGutterBackgroundLayer(width: Float, height: Float, theme: EditorTheme): BackgroundLayer? {
+        if (width <= 0f || theme.gutter.background == Color.Transparent) return null
+
+        return BackgroundLayer(
+            width = width,
+            height = height,
+            paint = paintCache.getOrCreate(
+                PaintCache.Key(color = theme.gutter.background.toArgb())
+            ).getOrThrow(),
+        )
+    }
 
     override fun createHighlightedLineLayer(
         viewportLines: List<ViewportLine>,
@@ -51,7 +66,7 @@ class SkiaLayerFactory(
             height = viewportLine.height,
             paint = paintCache.getOrCreate(
                 PaintCache.Key(color = theme.currentLine.toArgb())
-            ).getOrThrow()
+            ).getOrThrow(),
         )
     }
 
@@ -61,6 +76,7 @@ class SkiaLayerFactory(
         textY: Float,
         font: EditorFont,
         theme: EditorTheme,
+        isCurrentLine: Boolean,
     ): GutterLineLayer {
         val text = "${line + 1}"
 
@@ -68,21 +84,31 @@ class SkiaLayerFactory(
             TextLineCache.Key(text = text, font = font)
         ).getOrThrow()
 
+        val color = if (isCurrentLine) theme.gutter.currentLineText else theme.gutter.text
+
         val textPaint = paintCache.getOrCreate(
-            PaintCache.Key(color = theme.gutter.text.toArgb())
+            PaintCache.Key(color = color.toArgb())
         ).getOrThrow()
 
         val textX = width - font.lineHeight - dimensions.gutterGap - dimensions.gutterPaddingEnd - textLine.width
 
         return GutterLineLayer(
-            line = line, text = text, textLine = textLine, paint = textPaint, textX = textX, textY = textY
+            line = line,
+            text = text,
+            textLine = textLine,
+            paint = textPaint,
+            textX = textX,
+            textY = textY,
+            isCurrentLine = isCurrentLine,
         )
     }
 
     override fun createGutterSeparatorLayer(x: Float, height: Float, theme: EditorTheme) = GutterSeparatorLayer(
-        x = x, height = height, paint = paintCache.getOrCreate(
+        x = x,
+        height = height,
+        paint = paintCache.getOrCreate(
             PaintCache.Key(color = theme.gutter.divider.toArgb())
-        ).getOrThrow()
+        ).getOrThrow(),
     )
 
     override fun createCodeAreaContentLayers(
@@ -93,7 +119,9 @@ class SkiaLayerFactory(
     ) = viewportLines.map { viewportLine ->
         val paragraph = paragraphCache.getOrCreate(
             ParagraphCache.Key(
-                text = viewportLine.text, font = font, textColor = theme.text.toArgb()
+                text = viewportLine.text,
+                font = font,
+                textColor = theme.text.toArgb(),
             )
         ).getOrThrow()
 
@@ -101,7 +129,7 @@ class SkiaLayerFactory(
             viewportLine = viewportLine,
             paragraph = paragraph,
             x = -scrollX + dimensions.editorPaddingStart,
-            y = viewportLine.textBaselineY + font.ascent
+            y = viewportLine.textBaselineY + font.ascent,
         )
     }
 
@@ -118,14 +146,12 @@ class SkiaLayerFactory(
         ).getOrThrow()
 
         val (start, end) = selection.range
-
         val selectionRegionLayers = mutableListOf<SelectionRegionLayer>()
 
         contentLayers.filter { contentLayer ->
             contentLayer.viewportLine.line in start.line..end.line
         }.forEach { layer ->
             val line = layer.viewportLine.line
-
             val lineLength = layer.viewportLine.text.length
 
             val relStartX = if (line == start.line) {
@@ -134,14 +160,11 @@ class SkiaLayerFactory(
 
             val relEndX = when (line) {
                 end.line -> layer.getCoordinateAtOffset(end.column.coerceIn(0, lineLength))
-
                 else -> layer.viewportLine.width + scrollX
             }
 
             val baseOffset = -scrollX + dimensions.editorPaddingStart
-
             val left = (baseOffset + relStartX).coerceIn(0f, layer.viewportLine.width)
-
             val right = (baseOffset + relEndX).coerceIn(0f, layer.viewportLine.width)
 
             if (left < right) {
@@ -151,7 +174,7 @@ class SkiaLayerFactory(
                         top = layer.viewportLine.y,
                         right = right,
                         bottom = layer.viewportLine.y + layer.viewportLine.height,
-                        paint = selectionPaint
+                        paint = selectionPaint,
                     )
                 )
             }
@@ -185,16 +208,14 @@ class SkiaLayerFactory(
                 y = contentLayer.viewportLine.textBaselineY + font.ascent,
                 height = font.textHeight,
                 width = dimensions.caretWidth,
-                paint = paint
+                paint = paint,
             )
         }
     }
 
     override fun onRelease() {
         textLineCache.close()
-
         paintCache.close()
-
         paragraphCache.close()
     }
 }

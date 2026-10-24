@@ -6,6 +6,16 @@ import io.github.numq.krope.text.TextOperation
 import io.github.numq.krope.text.TextPosition
 import kotlin.time.ComparableTimeMark
 
+/**
+ * Record of an invertible text operation stored in [HistoryManager].
+ *
+ * @property forward Operation applied when redoing or initially executing.
+ * @property backward Inverted operation applied to undo.
+ * @property selectionsBefore Selection state prior to the operation.
+ * @property selectionsAfter Selection state following the operation.
+ * @property timestamp Time at which the operation occurred.
+ * @property canMerge Whether this entry may be merged with adjacent continuous entries.
+ */
 data class HistoryEntry(
     val forward: TextOperation.Data,
     val backward: TextOperation.Data,
