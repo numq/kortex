@@ -41,6 +41,7 @@ internal class SkiaCodeLayerFactory(
         theme: CodeEditorTheme,
     ): List<FoldingMarkersLayer> {
         val regions = foldingRegions.orEmpty()
+        if (regions.isEmpty()) return emptyList()
 
         val linesWithFolding = regions.map { region ->
             region.range.start.line
@@ -53,10 +54,11 @@ internal class SkiaCodeLayerFactory(
         return viewportLines.filter { viewportLine ->
             viewportLine.line in linesWithFolding
         }.map { viewportLine ->
-            val size = viewportLine.height * .7f
+            val size = viewportLine.height * 0.45f
 
-            val x = gutterWidth - size - dimensions.gutterPaddingEnd
-
+            val foldAreaWidth = viewportLine.height
+            val foldAreaX = gutterWidth - foldAreaWidth - dimensions.gutterPaddingEnd
+            val x = foldAreaX + (foldAreaWidth - size) / 2f
             val y = viewportLine.y + (viewportLine.height - size) / 2f
 
             FoldingMarkersLayer(

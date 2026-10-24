@@ -67,17 +67,16 @@ class CodeEditorEngine(
         analysisService.tokenProvider?.let { provider ->
             engine.buffer.snapshot.distinctUntilChangedBy(TextSnapshot::revision).mapLatest { snapshot: TextSnapshot ->
                 val tokens = provider.provideTokens(snapshot, null)
-
                 snapshot.revision to tokens
             }.flowOn(Dispatchers.Default).onEach { (revision, tokens) ->
                 if (engine.buffer.snapshot.value.revision == revision) {
-                    val existingSyntax = _codeState.value.syntax
+                    val currentSyntax = _codeState.value.syntax
                     dispatch(
                         CodeEditorAction.External.UpdateSyntax(
                             Syntax(
                                 revision = revision,
-                                foldingRegions = existingSyntax?.foldingRegions.orEmpty(),
-                                occurrences = existingSyntax?.occurrences.orEmpty(),
+                                foldingRegions = currentSyntax?.foldingRegions.orEmpty(),
+                                occurrences = currentSyntax?.occurrences.orEmpty(),
                                 tokensPerLine = tokens,
                             )
                         )

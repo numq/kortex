@@ -1,5 +1,7 @@
 package io.github.numq.kortex.example.shared
 
+import io.github.numq.kortex.code.syntax.FoldingRegion
+import io.github.numq.kortex.code.syntax.Occurrence
 import io.github.numq.kortex.code.token.Token
 import io.github.numq.kortex.code.token.TokenProvider
 import io.github.numq.kortex.code.token.TokenType
@@ -9,60 +11,68 @@ import io.github.numq.krope.text.TextSnapshot
 
 class KotlinTokenProvider : TokenProvider {
     private val keywords = setOf(
-        "package",
-        "import",
-        "class",
-        "interface",
-        "fun",
-        "val",
-        "var",
-        "return",
-        "if",
-        "else",
-        "when",
-        "for",
-        "while",
-        "do",
-        "try",
-        "catch",
-        "finally",
-        "throw",
-        "object",
-        "companion",
-        "sealed",
-        "data",
-        "enum",
-        "override",
-        "open",
-        "private",
-        "protected",
-        "public",
-        "internal",
-        "abstract",
-        "actual",
-        "expect",
-        "inline"
+        "package", "import", "class", "interface", "fun", "val", "var",
+        "return", "if", "else", "when", "for", "while", "do", "try",
+        "catch", "finally", "throw", "object", "companion", "sealed",
+        "data", "enum", "override", "open", "private", "protected",
+        "public", "internal", "abstract", "actual", "expect", "inline"
     )
 
     private val builtinTypes = setOf(
-        "Int",
-        "Long",
-        "Float",
-        "Double",
-        "Boolean",
-        "String",
-        "Char",
-        "Byte",
-        "Short",
-        "Unit",
-        "Any",
-        "Nothing",
-        "Array",
-        "List",
-        "Map",
-        "Set",
-        "ByteArray"
+        "Int", "Long", "Float", "Double", "Boolean", "String", "Char",
+        "Byte", "Short", "Unit", "Any", "Nothing", "Array", "List",
+        "Map", "Set", "ByteArray"
     )
+
+    fun calculateFoldingRegions(snapshot: TextSnapshot): List<FoldingRegion> {
+        val regions = mutableListOf<FoldingRegion>()
+        val braceStack = ArrayDeque<TextPosition>()
+
+        for (line in 0 until snapshot.lines) {
+            val text = snapshot.getLineText(line)
+            for (col in text.indices) {
+                when (text[col]) {
+                    '{' -> braceStack.addLast(TextPosition(line, col))
+                    '}' -> {
+                        braceStack.removeLastOrNull()?.let { startPos ->
+                            if (startPos.line < line) {
+                                regions.add(
+                                    FoldingRegion.Expanded(
+                                        TextRange(startPos, TextPosition(line, col + 1))
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return regions
+    }
+
+    fun calculateOccurrences(snapshot: TextSnapshot, symbol: String): List<Occurrence> {
+        if (symbol.isBlank() || !symbol.all { it.isLetterOrDigit() || it == '_' }) return emptyList()
+        val occurrences = mutableListOf<Occurrence>()
+        for (line in 0 until snapshot.lines) {
+            val text = snapshot.getLineText(line)
+            var idx = text.indexOf(symbol)
+            while (idx != -1) {
+                val beforeValid = idx == 0 || !text[idx - 1].isLetterOrDigit() && text[idx - 1] != '_'
+                val afterIdx = idx + symbol.length
+                val afterValid = afterIdx >= text.length || !text[afterIdx].isLetterOrDigit() && text[afterIdx] != '_'
+
+                if (beforeValid && afterValid) {
+                    occurrences.add(
+                        Occurrence.Reference(
+                            TextRange(TextPosition(line, idx), TextPosition(line, afterIdx))
+                        )
+                    )
+                }
+                idx = text.indexOf(symbol, idx + 1)
+            }
+        }
+        return occurrences
+    }
 
     override suspend fun provideTokens(snapshot: TextSnapshot, range: TextRange?): Map<Int, List<Token>> {
         val startLine = range?.start?.line ?: 0
@@ -152,11 +162,7 @@ class KotlinTokenProvider : TokenProvider {
                     if (isTriple) {
                         col += 3
                         val endTriple = text.indexOf("\"\"\"", col)
-                        if (endTriple != -1) {
-                            col = endTriple + 3
-                        } else {
-                            col = len
-                        }
+                        col = if (endTriple != -1) endTriple + 3 else len
                     } else {
                         col++
                         while (col < len) {
@@ -214,7 +220,8 @@ class KotlinTokenProvider : TokenProvider {
 
                     lineTokens.add(
                         Token(
-                            range = TextRange(TextPosition(line, startCol), TextPosition(line, col)), type = tokenType
+                            range = TextRange(TextPosition(line, startCol), TextPosition(line, col)),
+                            type = tokenType
                         )
                     )
                     continue
