@@ -54,9 +54,17 @@ internal object EditReducer {
                     val position = selection.caret
                     if (position == TextPosition.ZERO) continue
 
+                    val lineText = state.snapshot.getLineText(position.line)
+
+                    val isLineBlank = lineText.isBlank()
+
                     val startPosition = when {
+                        isLineBlank && position.line > 0 -> {
+                            val prevLine = position.line - 1
+                            TextPosition(line = prevLine, column = state.snapshot.getLineLength(prevLine))
+                        }
+
                         position.column > 0 -> {
-                            val lineText = state.snapshot.getLineText(position.line)
                             val textBefore = lineText.take(position.column)
 
                             when {
@@ -83,10 +91,16 @@ internal object EditReducer {
                         else -> position
                     }
 
-                    if (startPosition != position) {
+                    val endPosition = if (isLineBlank && position.line > 0) {
+                        TextPosition(line = position.line, column = lineText.length)
+                    } else {
+                        position
+                    }
+
+                    if (startPosition != endPosition) {
                         operations.add(
                             TextOperation.Data.Single.Delete(
-                                range = TextRange(start = startPosition, end = position)
+                                range = TextRange(start = startPosition, end = endPosition)
                             )
                         )
                     }
@@ -139,11 +153,14 @@ internal object EditReducer {
         val tabSize = state.config.tabSize.coerceAtLeast(1)
         val tabUnit = if (state.config.useSoftTabs) " ".repeat(tabSize) else "\t"
 
-        val sortedSelections = state.selections.sortedDescending()
+        val naturalSelections = state.selections.sorted()
+
         val operations = ArrayList<TextOperation.Data.Single>()
         val targetSelections = ArrayList<Selection>()
 
-        for (selection in sortedSelections) {
+        var cumulativeLinesAdded = 0
+
+        for (selection in naturalSelections) {
             val caret = selection.caret
             val lineText = state.snapshot.getLineText(caret.line)
 
@@ -156,24 +173,39 @@ internal object EditReducer {
 
             val insertText: String
             val targetPos: TextPosition
+            val linesAddedByThisCursor: Int
 
             when {
                 isBetweenBraces -> {
                     insertText = "\n$currentIndent$tabUnit\n$currentIndent"
-                    targetPos = TextPosition(line = caret.line + 1, column = currentIndent.length + tabUnit.length)
+                    linesAddedByThisCursor = 2
+                    targetPos = TextPosition(
+                        line = caret.line + cumulativeLinesAdded + 1,
+                        column = currentIndent.length + tabUnit.length
+                    )
                 }
 
                 beforeCaret.endsWith('{') || beforeCaret.endsWith(':') || beforeCaret.endsWith('(') -> {
                     val newIndent = currentIndent + tabUnit
                     insertText = "\n$newIndent"
-                    targetPos = TextPosition(line = caret.line + 1, column = newIndent.length)
+                    linesAddedByThisCursor = 1
+                    targetPos = TextPosition(
+                        line = caret.line + cumulativeLinesAdded + 1,
+                        column = newIndent.length
+                    )
                 }
 
                 else -> {
                     insertText = "\n$currentIndent"
-                    targetPos = TextPosition(line = caret.line + 1, column = currentIndent.length)
+                    linesAddedByThisCursor = 1
+                    targetPos = TextPosition(
+                        line = caret.line + cumulativeLinesAdded + 1,
+                        column = currentIndent.length
+                    )
                 }
             }
+
+            cumulativeLinesAdded += linesAddedByThisCursor
 
             val op = when {
                 selection.isNotEmpty -> TextOperation.Data.Single.Replace(range = selection.range, text = insertText)
@@ -186,11 +218,19 @@ internal object EditReducer {
 
         val finalOperation = when (operations.size) {
             1 -> operations[0]
-            else -> TextOperation.Data.Batch(operations)
+            else -> TextOperation.Data.Batch(operations.sortedByDescending { op ->
+                when (op) {
+                    is TextOperation.Data.Single.Insert -> op.position
+                    is TextOperation.Data.Single.Delete -> op.range.start
+                    is TextOperation.Data.Single.Replace -> op.range.start
+                }
+            })
         }
 
         return EditorCommand.ApplyText(
-            operation = finalOperation, canMerge = false, targetSelections = targetSelections.reversed()
+            operation = finalOperation,
+            canMerge = false,
+            targetSelections = targetSelections
         )
     }
 

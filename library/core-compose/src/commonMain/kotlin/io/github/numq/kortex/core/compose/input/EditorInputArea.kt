@@ -348,6 +348,8 @@ fun EditorInputArea(
 
     var isFocused by remember { mutableStateOf(false) }
 
+    var currentHoverIcon by remember { mutableStateOf(PointerIcon.Text) }
+
     val imeBridge = remember(engine) {
         EditorTextInputBridge(
             engine = engine,
@@ -533,6 +535,14 @@ fun EditorInputArea(
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
                 val change = event.changes.firstOrNull() ?: continue
+
+                if (change.type == PointerType.Mouse) {
+                    val isOverGutter = change.position.x < currentGutterWidth
+                    val targetIcon = if (isOverGutter) PointerIcon.Default else PointerIcon.Text
+                    if (currentHoverIcon != targetIcon) {
+                        currentHoverIcon = targetIcon
+                    }
+                }
 
                 if (event.type == PointerEventType.Scroll) {
                     currentOnDismissContextMenu()
@@ -846,7 +856,7 @@ fun EditorInputArea(
             currentOnDismissContextMenu()
         }
         onFocusChanged(focusState.isFocused)
-    }.focusable().then(keyboardModifier).then(pointerInputModifier).pointerHoverIcon(PointerIcon.Text)) {
+    }.focusable().then(keyboardModifier).then(pointerInputModifier).pointerHoverIcon(currentHoverIcon)) {
         content()
     }
 }

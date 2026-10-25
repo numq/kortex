@@ -12,4 +12,5 @@ allprojects {
     group = "io.github.numq.kortex"
     version = System.getenv("GITHUB_REF")?.removePrefix("refs/tags/v") ?: providers.gradleProperty("version")
         .getOrElse("0.0.0")
+    
 }

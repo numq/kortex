@@ -3,10 +3,7 @@ package io.github.numq.kortex.core
 import io.github.numq.kortex.core.history.HistoryEntry
 import io.github.numq.kortex.core.history.HistoryManager
 import io.github.numq.kortex.core.selection.Selection
-import io.github.numq.krope.text.TextBuffer
-import io.github.numq.krope.text.TextEdit
-import io.github.numq.krope.text.TextOperation
-import io.github.numq.krope.text.TextPosition
+import io.github.numq.krope.text.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.*
@@ -90,49 +87,53 @@ class EditorEngine(
         }
     }
 
-    private suspend fun executeOperation(
+    private suspend fun executeAtomicOperation(
         operation: TextOperation.Data,
         targetSelections: List<Selection>? = null,
     ): TextEdit.Data? {
-        val safeOperation = when (operation) {
+        val totalEditData: TextEdit.Data = when (operation) {
+            is TextOperation.Data.Single.Insert -> {
+                buffer.insert(operation.position, operation.text).getOrNull() ?: return null
+            }
+
+            is TextOperation.Data.Single.Delete -> {
+                buffer.delete(operation.range).getOrNull() ?: return null
+            }
+
+            is TextOperation.Data.Single.Replace -> {
+                buffer.replace(operation.range, operation.text).getOrNull() ?: return null
+            }
+
             is TextOperation.Data.Batch -> {
-                val sortedOperations = operation.operations.sortedByDescending { op ->
-                    when (op) {
-                        is TextOperation.Data.Single.Insert -> op.position
-                        is TextOperation.Data.Single.Delete -> op.range.start
-                        is TextOperation.Data.Single.Replace -> op.range.start
-                    }
+                val sorted = operation.operations.sortedWith { op1, op2 ->
+                    getOpStart(op2).compareTo(getOpStart(op1))
                 }
-                TextOperation.Data.Batch(sortedOperations)
-            }
 
-            else -> operation
-        }
+                val appliedSingles = ArrayList<TextEdit.Data.Single>(sorted.size)
 
-        val editDataResult = when (safeOperation) {
-            is TextOperation.Data.Single.Insert -> buffer.insert(safeOperation.position, safeOperation.text)
-            is TextOperation.Data.Single.Delete -> buffer.delete(safeOperation.range)
-            is TextOperation.Data.Single.Replace -> buffer.replace(safeOperation.range, safeOperation.text)
-            is TextOperation.Data.Batch -> buffer.withBatch { batchBuffer ->
-                for (op in safeOperation.operations) {
-                    when (op) {
-                        is TextOperation.Data.Single.Insert -> batchBuffer.insert(op.position, op.text)
-                        is TextOperation.Data.Single.Delete -> batchBuffer.delete(op.range)
-                        is TextOperation.Data.Single.Replace -> batchBuffer.replace(op.range, op.text)
+                for (op in sorted) {
+                    val singleResult = when (op) {
+                        is TextOperation.Data.Single.Insert -> buffer.insert(op.position, op.text)
+                        is TextOperation.Data.Single.Delete -> buffer.delete(op.range)
+                        is TextOperation.Data.Single.Replace -> buffer.replace(op.range, op.text)
                     }
+
+                    val singleEdit = singleResult.getOrNull() ?: return null
+                    appliedSingles.add(singleEdit)
                 }
+
+                TextEdit.Data.Batch(appliedSingles)
             }
         }
 
-        val editData = editDataResult.getOrNull() ?: return null
         val newSnapshot = buffer.snapshot.value
 
         _state.update { currentState ->
             val resolvedSelections = targetSelections?.map { selection ->
                 selection.coerceIn(newSnapshot)
             } ?: currentState.selections.map { selection ->
-                val mappedAnchor = mapPositionThroughDelta(selection.anchor, editData).coerceIn(newSnapshot)
-                val mappedCaret = mapPositionThroughDelta(selection.caret, editData).coerceIn(newSnapshot)
+                val mappedAnchor = mapPositionThroughDelta(selection.anchor, totalEditData).coerceIn(newSnapshot)
+                val mappedCaret = mapPositionThroughDelta(selection.caret, totalEditData).coerceIn(newSnapshot)
                 Selection(anchor = mappedAnchor, caret = mappedCaret, stickyColumn = mappedCaret.column)
             }
 
@@ -142,7 +143,101 @@ class EditorEngine(
             )
         }
 
-        return editData
+        return totalEditData
+    }
+
+    private fun getOpStart(op: TextOperation.Data.Single): TextPosition = when (op) {
+        is TextOperation.Data.Single.Insert -> op.position
+        is TextOperation.Data.Single.Delete -> op.range.start
+        is TextOperation.Data.Single.Replace -> op.range.start
+    }
+
+    private fun calculateEndPositionAfterInsert(start: TextPosition, text: String): TextPosition {
+        val lines = text.split('\n')
+        return if (lines.size == 1) {
+            TextPosition(start.line, start.column + text.length)
+        } else {
+            TextPosition(start.line + lines.size - 1, lines.last().length)
+        }
+    }
+
+    private fun computeInverseOperation(
+        operation: TextOperation.Data,
+        snapshotBefore: TextSnapshot,
+    ): TextOperation.Data {
+        return when (operation) {
+            is TextOperation.Data.Single.Insert -> {
+                val endPos = calculateEndPositionAfterInsert(operation.position, operation.text)
+                TextOperation.Data.Single.Delete(TextRange(operation.position, endPos))
+            }
+
+            is TextOperation.Data.Single.Delete -> {
+                val deletedText = snapshotBefore.getTextInRange(operation.range)
+                TextOperation.Data.Single.Insert(operation.range.start, deletedText)
+            }
+
+            is TextOperation.Data.Single.Replace -> {
+                val replacedText = snapshotBefore.getTextInRange(operation.range)
+                val newEndPos = calculateEndPositionAfterInsert(operation.range.start, operation.text)
+                TextOperation.Data.Single.Replace(TextRange(operation.range.start, newEndPos), replacedText)
+            }
+
+            is TextOperation.Data.Batch -> {
+                val sortedOps = operation.operations.sortedWith { o1, o2 ->
+                    getOpStart(o1).compareTo(getOpStart(o2))
+                }
+
+                var lineShift = 0
+                val inverseSingles = ArrayList<TextOperation.Data.Single>(sortedOps.size)
+
+                for (op in sortedOps) {
+                    when (op) {
+                        is TextOperation.Data.Single.Insert -> {
+                            val shiftedStart = TextPosition(op.position.line + lineShift, op.position.column)
+                            val shiftedEnd = calculateEndPositionAfterInsert(shiftedStart, op.text)
+
+                            val linesAdded = op.text.count { it == '\n' }
+                            lineShift += linesAdded
+
+                            inverseSingles.add(TextOperation.Data.Single.Delete(TextRange(shiftedStart, shiftedEnd)))
+                        }
+
+                        is TextOperation.Data.Single.Delete -> {
+                            val shiftedRange = TextRange(
+                                TextPosition(op.range.start.line + lineShift, op.range.start.column),
+                                TextPosition(op.range.end.line + lineShift, op.range.end.column),
+                            )
+                            val deletedText = snapshotBefore.getTextInRange(op.range)
+                            val linesRemoved = op.range.end.line - op.range.start.line
+                            lineShift -= linesRemoved
+
+                            inverseSingles.add(TextOperation.Data.Single.Insert(shiftedRange.start, deletedText))
+                        }
+
+                        is TextOperation.Data.Single.Replace -> {
+                            val shiftedStart = TextPosition(op.range.start.line + lineShift, op.range.start.column)
+                            val newEnd = calculateEndPositionAfterInsert(shiftedStart, op.text)
+                            val replacedText = snapshotBefore.getTextInRange(op.range)
+
+                            val linesDiff = op.text.count { it == '\n' } - (op.range.end.line - op.range.start.line)
+                            lineShift += linesDiff
+
+                            inverseSingles.add(
+                                TextOperation.Data.Single.Replace(
+                                    TextRange(shiftedStart, newEnd), replacedText
+                                )
+                            )
+                        }
+                    }
+                }
+
+                val reversedInverse = inverseSingles.sortedWith { o1, o2 ->
+                    getOpStart(o2).compareTo(getOpStart(o1))
+                }
+
+                TextOperation.Data.Batch(reversedInverse)
+            }
+        }
     }
 
     private suspend fun applyOperationInternal(
@@ -151,25 +246,10 @@ class EditorEngine(
         targetSelections: List<Selection>? = null,
     ) {
         val stateBefore = _state.value
-        val editData = executeOperation(operation, targetSelections = targetSelections) ?: return
+        executeAtomicOperation(operation, targetSelections = targetSelections) ?: return
         val stateAfter = _state.value
 
-        val inverseData = editData.invert()
-
-        val inverseOp = when (val rawInverseOperation = inverseData.toOperationData(stateAfter.snapshot)) {
-            is TextOperation.Data.Batch -> {
-                val sortedSingles = rawInverseOperation.operations.sortedByDescending { op ->
-                    when (op) {
-                        is TextOperation.Data.Single.Insert -> op.position
-                        is TextOperation.Data.Single.Delete -> op.range.start
-                        is TextOperation.Data.Single.Replace -> op.range.start
-                    }
-                }
-                TextOperation.Data.Batch(sortedSingles)
-            }
-
-            else -> rawInverseOperation
-        }
+        val inverseOp = computeInverseOperation(operation, stateBefore.snapshot)
 
         history.record(
             HistoryEntry(
@@ -185,12 +265,12 @@ class EditorEngine(
 
     private suspend fun undoInternal() {
         val entry = history.popUndo() ?: return
-        executeOperation(entry.backward, targetSelections = entry.selectionsBefore)
+        executeAtomicOperation(entry.backward, targetSelections = entry.selectionsBefore)
     }
 
     private suspend fun redoInternal() {
         val entry = history.popRedo() ?: return
-        executeOperation(entry.forward, targetSelections = entry.selectionsAfter)
+        executeAtomicOperation(entry.forward, targetSelections = entry.selectionsAfter)
     }
 
     /**
