@@ -6,6 +6,8 @@
 [![Rendering Engine](https://img.shields.io/badge/Rendering-Skia%20%2F%20Skiko-critical.svg?logo=skia)](https://skia.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
+![Kortex demo GIF](./media/demo.gif)
+
 **Kortex** is an ultra-fast, hardware-accelerated code and text editor component built for **Kotlin Multiplatform** and
 **Compose Multiplatform** (targeting Desktop JVM, Android, iOS, and WebAssembly / WASM-JS).
 
